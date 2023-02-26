@@ -1,15 +1,15 @@
 // extern crate muggs;
 
 use std::sync::{Arc, Mutex};
+use tokio::runtime::Runtime;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
 use wgpu::util::DeviceExt;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
-
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -50,7 +50,7 @@ struct State {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    // storage: Arc<froggy::Storage<Mutex<MaybeSized<dyn Composable>>>>,
+    runtime: Runtime, // storage: Arc<froggy::Storage<Mutex<MaybeSized<dyn Composable>>>>,
 }
 
 impl Vertex {
@@ -226,6 +226,17 @@ impl State {
 
         let num_vertices = VERTICES.len() as u32;
         let num_indices = INDICIES.len() as u32;
+        #[cfg(feature = "full")]
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        #[cfg(not(feature = "full"))]
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         Self {
             window,
             surface,
@@ -241,7 +252,8 @@ impl State {
             camera,
             camera_uniform,
             camera_buffer,
-            camera_bind_group, // storage,
+            camera_bind_group,
+            runtime, // storage,
         }
     }
     pub fn window(&self) -> &Window {
@@ -301,8 +313,7 @@ impl State {
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
-pub async fn run() {
-    println!("deez");
+pub fn run() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")]{
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -333,7 +344,7 @@ pub async fn run() {
     // let mut storage = froggy::Storage::<MaybeSized<dyn Composable>>::new();
 
     // let mut storage = froggy::Storage::<dyn Composable>::new();
-    let mut state = State::new(window).await;
+    let mut state = pollster::block_on(State::new(window));
     event_loop.run(move |event, __, control_flow| match event {
         Event::WindowEvent {
             ref event,
