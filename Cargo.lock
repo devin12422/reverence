@@ -796,15 +796,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "froggy"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70d94d84c0ac571094fabf5b11ec06816e0b6784b94892ce9a3185e8a78d3a5b"
-dependencies = [
- "spin 0.4.10",
-]
-
-[[package]]
 name = "futures"
 version = "0.3.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1019,16 +1010,6 @@ dependencies = [
  "ab_glyph",
  "approx",
  "xi-unicode",
-]
-
-[[package]]
-name = "good_memory_allocator"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1651659e016ea4259760966432aebcc96c81e26743fb018c59585ddd677127e"
-dependencies = [
- "either",
- "spin 0.9.5",
 ]
 
 [[package]]
@@ -1471,13 +1452,6 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.42.0",
-]
-
-[[package]]
-name = "muggs"
-version = "0.1.0"
-dependencies = [
- "good_memory_allocator",
 ]
 
 [[package]]
@@ -2070,14 +2044,12 @@ dependencies = [
  "console_error_panic_hook",
  "console_log",
  "env_logger",
- "froggy",
  "ggrs",
  "glam 0.22.0",
  "iced",
  "iced_wgpu",
  "iced_winit",
  "log",
- "muggs",
  "pollster",
  "tokio",
  "wasm-bindgen",
@@ -2263,21 +2235,6 @@ checksum = "02e2d2db9033d13a1567121ddd7a095ee144db4e1ca1b1bda3419bc0da294ebd"
 dependencies = [
  "libc",
  "winapi",
-]
-
-[[package]]
-name = "spin"
-version = "0.4.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ceac490aa12c567115b40b7b7fceca03a6c9d53d5defea066123debc83c5dc1f"
-
-[[package]]
-name = "spin"
-version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dccf47db1b41fa1573ed27ccf5e08e3ca771cb994f776668c5ebda893b248fc"
-dependencies = [
- "lock_api",
 ]
 
 [[package]]

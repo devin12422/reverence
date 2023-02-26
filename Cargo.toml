@@ -16,8 +16,6 @@ path = "src/main.rs"
 bytemuck = "1.13.0"
 cfg-if = "1"
 env_logger = "0.10.0"
-froggy = "0.4.4"
-muggs = {path = "../../muggs"}
 ggrs = "0.9.3"
 glam = "0.22.0"
 iced = "0.7.0"
