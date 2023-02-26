@@ -1,8 +1,8 @@
 [package]
 name = "reverence"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
-
+authors = ["Devin <kramerdevin321@gmail.com>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 crate-type = ["cdylib","rlib"]
@@ -17,10 +17,14 @@ bytemuck = "1.13.0"
 cfg-if = "1"
 env_logger = "0.10.0"
 froggy = "0.4.4"
+muggs = {path = "../../muggs"}
 ggrs = "0.9.3"
 glam = "0.22.0"
+iced = "0.7.0"
+iced_wgpu = "0.8.0"
+iced_winit = "0.7.0"
 log = "0.4.17"
-pollster = "0.3.0"
+pollster = "0.3.0" #To be removed in favor of tokio
 tokio = { version = "1", features = ["full"] }
 wgpu = "0.15.0"
 winit = "0.27.5"
