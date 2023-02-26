@@ -9,7 +9,7 @@ crate-type = ["cdylib","rlib"]
 
 
 [target.'cfg(target_arch = "wasm32")']
-required-features = ["wgpu/webgl"]
+required-features = ["wgpu/webgl","rayon/atomics","rayon/bulk-memory"]
 
 
 [dependencies]
