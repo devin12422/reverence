@@ -8,9 +8,6 @@ authors = ["Devin <kramerdevin321@gmail.com>"]
 crate-type = ["cdylib","rlib"]
 
 
-[target.'cfg(target_arch = "wasm32")']
-required-features = ["wgpu/webgl","rayon/atomics","rayon/bulk-memory"]
-
 
 [dependencies]
 bytemuck = {version="1.13.0",features=["derive"]}
@@ -28,8 +25,17 @@ tokio = { version = "1", features = ["sync","macros","io-util","rt","time"] }
 wgpu = "0.15.0"
 winit = "0.27.5"
 
+
+
+# [target.'cfg(target_arch = "wasm32")']
+
+# [target.wasm32-unknown-unknown]
+# rustflags = ["-C", "target-feature=+atomics,+bulk-memory,+mutable-globals"]
+# required-features = ["webgl"]
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"
+wgpu = {version = "0.15.0", features=["webgl"]}
 console_log = "0.2.0"
 wasm-bindgen = "0.2.76"
 wasm-bindgen-futures = "0.4.30"
@@ -39,6 +45,11 @@ web-sys = { version = "0.3.53", features = [
     "Window",
     "Element",
 ]}
+
+
 [features]
 gui = ["dep:iced", "dep:iced_wgpu", "dep:iced_winit"]
 full = ["tokio/full"]
+
+[unstable]
+build-std = ["panic_abort", "std"]
