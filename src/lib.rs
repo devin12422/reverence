@@ -2,8 +2,6 @@
 
 use std::sync::{Arc, Mutex};
 use tokio::runtime::Runtime;
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
 use wgpu::util::DeviceExt;
 use winit::{
     event::*,
@@ -312,7 +310,6 @@ impl State {
     }
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub fn run() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")]{
