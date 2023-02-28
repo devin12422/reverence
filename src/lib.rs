@@ -1,5 +1,4 @@
 // extern crate muggs;
-
 use std::sync::{Arc, Mutex};
 use tokio::runtime::Runtime;
 use wgpu::util::DeviceExt;
@@ -9,8 +8,9 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+use bytemuck::{Pod, Zeroable};
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct Vertex {
     position: [f32; 3],
     color: [f32; 3],
@@ -27,7 +27,7 @@ struct Camera {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 struct CameraUniform {
     view_proj: [[f32; 4]; 4],
 }
@@ -48,7 +48,7 @@ struct State {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    runtime: Runtime, // storage: Arc<froggy::Storage<Mutex<MaybeSized<dyn Composable>>>>,
+    // runtime: Runtime, // storage: Arc<froggy::Storage<Mutex<MaybeSized<dyn Composable>>>>,
 }
 
 impl Vertex {
@@ -224,17 +224,17 @@ impl State {
 
         let num_vertices = VERTICES.len() as u32;
         let num_indices = INDICIES.len() as u32;
-        #[cfg(feature = "full")]
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        // #[cfg(feature = "full")]
+        // let runtime = tokio::runtime::Builder::new_multi_thread()
+        // .enable_all()
+        // .build()
+        // .unwrap();
 
-        #[cfg(not(feature = "full"))]
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        // #[cfg(not(feature = "full"))]
+        // let runtime = tokio::runtime::Builder::new_current_thread()
+        //     .enable_all()
+        //     .build()
+        //     .unwrap();
         Self {
             window,
             surface,
@@ -251,7 +251,7 @@ impl State {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
-            runtime, // storage,
+            // runtime, // storage,
         }
     }
     pub fn window(&self) -> &Window {
