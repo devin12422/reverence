@@ -36,16 +36,8 @@ mod core {
                         env_logger::init();
                     }
                 }
-                #[cfg(feature = "full")]
-                let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
-                #[cfg(not(feature = "full"))]
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .build()
-                    .unwrap();
-
                 let event_loop = EventLoop::new();
                 let window = WindowBuilder::new().build(&event_loop).unwrap();
-
                 #[cfg(target_arch = "wasm32")]
                 {
                     use winit::dpi::PhysicalSize;
@@ -62,7 +54,21 @@ mod core {
                         })
                         .expect("Couldn't append canvas to document body.");
                 }
-              let size = window.inner_size();
+                let wgpu = WGPUInterface::new().await;
+                #[cfg(feature = "full")]
+                let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
+                #[cfg(not(feature = "full"))]
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap();
+
+                Self{runtime,wgpu,event_loop,window}
+            }
+            fn run() {}
+        }
+        impl WGPUInterface {
+            async fn new(window:Window) -> Self {
+                let size = window.inner_size();
 
                 let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
                     backends: wgpu::Backends::all(),
@@ -70,34 +76,24 @@ mod core {
                 });
 
                 let surface = unsafe { instance.create_surface(&window) }.unwrap();
-                let (tx,rx) = oneshot::channel();
-                runtime.spawn( async move { let adapter = instance
-                   .request_adapter(&wgpu::RequestAdapterOptions {
+                let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
                         power_preference: wgpu::PowerPreference::default(),
                         compatible_surface: Some(&surface),
                         force_fallback_adapter: false,
                     }).await;
-                tx.send(adapter).unwrap();
-                });
-                runtime.block_on(async move {
-                    
-                let adapter = rx.await.unwrap();
-                });
-                                   let (device, queue) = adapter
-                    .request_device(
-                        &wgpu::DeviceDescriptor {
-                            features: wgpu::Features::empty(),
-                            limits: if cfg!(target_arch = "wasm32") {
-                                wgpu::Limits::downlevel_webgl2_defaults()
-                            } else {
-                                wgpu::Limits::default()
-                            },
-                            label: None,
+                                                             
+                let (device,queue) = adapter.request_device(        
+                    &wgpu::DeviceDescriptor {
+                        features: wgpu::Features::empty(),
+                        limits: if cfg!(target_arch = "wasm32") {
+                            wgpu::Limits::downlevel_webgl2_defaults()
+                        } else {
+                            wgpu::Limits::default()
                         },
-                        None,
-                    )
-                    .await
-                    .unwrap();
+                        label: None,
+                    },
+                    None,
+                ).await;
                 let config = wgpu::SurfaceConfiguration {
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                     format: surface.get_capabilities(&adapter).formats[0],
@@ -108,16 +104,8 @@ mod core {
                     alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 };
                 surface.configure(&device, &config);
-                let wgpu = WGPUInterface{surface,device,queue,config,size}                Self { runtime, wgpu }
-            }
-            fn run() {}
-        }
-        impl WGPUInterface {
-            fn ew(runtime: tokio::runtime::Runtime) {}
-            async fn new(surface:Surface) -> Self {
-                
                 Self {
-                                        surface,
+                    surface,
                     device,
                     queue,
                     config,
