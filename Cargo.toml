@@ -7,7 +7,12 @@ authors = ["Devin <kramerdevin321@gmail.com>"]
 [lib]
 crate-type = ["cdylib","rlib"]
 
-
+[dev-dependencies]
+criterion = "0.3"
+iai = "0.1"
+[[bench]]
+name = "my_benchmark"
+harness = false
 
 [dependencies]
 bytemuck = {version="1.13.0",features=["derive"]}
