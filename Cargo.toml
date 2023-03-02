@@ -15,6 +15,7 @@ name = "my_benchmark"
 harness = false
 
 [dependencies]
+async-trait = "0.1.64"
 bytemuck = {version="1.13.0",features=["derive"]}
 cfg-if = "1"
 env_logger = "0.10.0"
