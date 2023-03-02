@@ -1,33 +1,55 @@
 // extern crate muggs;
 mod core {
     mod engine {
+        use async_trait::async_trait;
         use std::sync::{Arc, Mutex};
-        use tokio::runtime::Runtime;
+        use tokio::runtime;
         use tokio::sync::oneshot;
+        use tokio::task;
         use wgpu::{util::DeviceExt, Surface};
         use winit::{
             event::*,
             event_loop::{ControlFlow, EventLoop},
             window::{Window, WindowBuilder},
         };
-
-        struct WGPUInterface {
+        #[async_trait]
+        trait Renderer<GenericRenderer>
+        where
+            GenericRenderer: Renderer<GenericRenderer>,
+        {
+            // Self and GenericRenderer should be interchangable
+            async fn new() -> Self;
+            async fn init(wgpu: &mut WGPUInterface<GenericRenderer>);
+            async fn render(wgpu: &mut WGPUInterface<GenericRenderer>);
+            async fn resize(wgpu: &mut WGPUInterface<GenericRenderer>);
+        }
+        struct WGPUInterface<GenericRenderer>
+        where
+            GenericRenderer: Renderer<GenericRenderer>,
+        {
             surface: wgpu::Surface,
             device: wgpu::Device,
             queue: wgpu::Queue,
             config: wgpu::SurfaceConfiguration,
             size: winit::dpi::PhysicalSize<u32>,
-            window: Window,
+            renderer: GenericRenderer, // window: Window,
         }
-        struct Renderer {}
-        struct RT {
+        struct Instance {}
+        struct RT<GenericRenderer>
+        where
+            GenericRenderer: Renderer<GenericRenderer>,
+        {
             runtime: tokio::runtime::Runtime,
-            wgpu: WGPUInterface,
+            wgpu: WGPUInterface<GenericRenderer>,
             event_loop: EventLoop<()>,
             window: Window,
+            instance: Instance,
         }
-        impl RT {
-            fn new() -> Self {
+        impl<GenericRenderer> RT<GenericRenderer>
+        where
+            GenericRenderer: Renderer<GenericRenderer> + 'static,
+        {
+            async fn new() -> Self {
                 cfg_if::cfg_if! {
                     if #[cfg(target_arch = "wasm32")]{
                         std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -62,7 +84,75 @@ mod core {
                         })
                         .expect("Couldn't append canvas to document body.");
                 }
-              let size = window.inner_size();
+                let wgpu = WGPUInterface::new(&window).await;
+                let instance = Instance {};
+                Self {
+                    runtime,
+                    wgpu,
+                    event_loop,
+                    window,
+                    instance,
+                }
+            }
+            fn run(mut self) {
+                let RT {
+                    mut runtime,
+                    mut wgpu,
+                    mut event_loop,
+                    mut window,
+                    mut instance,
+                } = self;
+                runtime.block_on(async move {
+                    event_loop.run(move |event, __, control_flow| {
+                        match event {
+                            Event::WindowEvent {
+                                ref event,
+                                window_id,
+                            } if window_id == window.id() && !instance.input(event) => {
+                                match event {
+                                    WindowEvent::CloseRequested
+                                    | WindowEvent::KeyboardInput {
+                                        input:
+                                            KeyboardInput {
+                                                state: ElementState::Pressed,
+                                                virtual_keycode: Some(VirtualKeyCode::Escape),
+                                                ..
+                                            },
+                                        ..
+                                    } => *control_flow = ControlFlow::Exit,
+                                    WindowEvent::Resized(physical_size) => {
+                                        wgpu.resize(*physical_size);
+                                    }
+                                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                                        wgpu.resize(**new_inner_size);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            Event::RedrawRequested(window_id) if window_id == window.id() => {
+                                runtime.spawn_blocking(|| async { wgpu.render() });
+                                // wgpu.render();
+                                // match state.render() {
+                                //     Ok(_) => {}
+                                //     Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                                //     Err(wgpu::SurfaceError::OutOfMemory) => {
+                                //         *control_flow = ControlFlow::Exit
+                                //     }
+                                //     Err(e) => eprintln!("{:?}", e),
+                                // }
+                            }
+                            _ => {}
+                        }
+                    });
+                });
+            }
+        }
+        impl<GenericRenderer> WGPUInterface<GenericRenderer>
+        where
+            GenericRenderer: Renderer<GenericRenderer>,
+        {
+            async fn new(window: &Window) -> Self {
+                let size = window.inner_size();
 
                 let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
                     backends: wgpu::Backends::all(),
@@ -70,20 +160,15 @@ mod core {
                 });
 
                 let surface = unsafe { instance.create_surface(&window) }.unwrap();
-                let (tx,rx) = oneshot::channel();
-                runtime.spawn( async move { let adapter = instance
-                   .request_adapter(&wgpu::RequestAdapterOptions {
+                let adapter = instance
+                    .request_adapter(&wgpu::RequestAdapterOptions {
                         power_preference: wgpu::PowerPreference::default(),
                         compatible_surface: Some(&surface),
                         force_fallback_adapter: false,
-                    }).await;
-                tx.send(adapter).unwrap();
-                });
-                runtime.block_on(async move {
-                    
-                let adapter = rx.await.unwrap();
-                });
-                                   let (device, queue) = adapter
+                    })
+                    .await
+                    .unwrap();
+                let (device, queue) = adapter
                     .request_device(
                         &wgpu::DeviceDescriptor {
                             features: wgpu::Features::empty(),
@@ -108,99 +193,37 @@ mod core {
                     alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 };
                 surface.configure(&device, &config);
-                let wgpu = WGPUInterface{surface,device,queue,config,size}                Self { runtime, wgpu }
-            }
-            fn run() {}
-        }
-        impl WGPUInterface {
-            fn ew(runtime: tokio::runtime::Runtime) {}
-            async fn new(surface:Surface) -> Self {
-                
+                let renderer = GenericRenderer::new().await;
                 Self {
-                                        surface,
+                    surface,
                     device,
                     queue,
                     config,
                     size,
+                    renderer,
                 }
             }
-            pub fn window(&self) -> &Window {
-                &self.window
+            async fn init(&mut self) {
+                // <GenericRenderer as Renderer>::init(self.renderer);
+                GenericRenderer::init(self).await;
             }
-
-            fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+            async fn render(&mut self) {
+                GenericRenderer::render(self).await;
+            }
+            async fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
                 if new_size.width > 0 && new_size.height > 0 {
                     self.size = new_size;
                     self.config.width = new_size.width;
                     self.config.height = new_size.height;
                     self.surface.configure(&self.device, &self.config);
+                    GenericRenderer::resize(self).await;
                 }
             }
+        }
+        impl Instance {
             fn input(&mut self, event: &WindowEvent) -> bool {
                 false
             }
-            fn update(&mut self) {}
-        }
-
-        pub fn run() {
-            let mut state = pollster::block_on(WGPUInterface::new(window));
-            event_loop.run(move |event, __, control_flow| match event {
-                Event::WindowEvent {
-                    ref event,
-                    window_id,
-                } if window_id == state.window().id() && !state.input(event) => match event {
-                    WindowEvent::CloseRequested
-                    | WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                state: ElementState::Pressed,
-                                virtual_keycode: Some(VirtualKeyCode::Escape),
-                                ..
-                            },
-                        ..
-                    } => *control_flow = ControlFlow::Exit,
-                    WindowEvent::Resized(physical_size) => {
-                        state.resize(*physical_size);
-                    }
-                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                        state.resize(**new_inner_size);
-                    }
-                    _ => {}
-                },
-                Event::RedrawRequested(window_id) if window_id == state.window().id() => {
-                    state.update();
-                    // match state.render() {
-                    //     Ok(_) => {}
-                    //     Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                    //     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                    //     Err(e) => eprintln!("{:?}", e),
-                    // }
-                }
-                _ => {}
-            });
         }
     }
 }
-// const VERTICES: &[Vertex] = &[
-//     Vertex {
-//         position: [-0.0868241, 0.49240386, 0.0],
-//         color: [0.5, 0.0, 0.5],
-//     },
-//     Vertex {
-//         position: [-0.49513406, 0.06958647, 0.0],
-//         color: [0.5, 0.0, 0.5],
-//     },
-//     Vertex {
-//         position: [-0.21918549, -0.44939706, 0.0],
-//         color: [0.5, 0.0, 0.5],
-//     },
-//     Vertex {
-//         position: [0.35966998, -0.3473291, 0.0],
-//         color: [0.5, 0.0, 0.5],
-//     },
-//     Vertex {
-//         position: [0.44147372, 0.2347359, 0.0],
-//         color: [0.5, 0.0, 0.5],
-//     },
-// ];
-// const INDICIES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
