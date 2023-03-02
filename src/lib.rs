@@ -1,4 +1,3 @@
-// extern crate muggs;
 mod core {
     mod engine {
         use async_trait::async_trait;
@@ -130,16 +129,15 @@ mod core {
                                 }
                             }
                             Event::RedrawRequested(window_id) if window_id == window.id() => {
-                                runtime.spawn_blocking(|| async { wgpu.render() });
-                                // wgpu.render();
-                                // match state.render() {
-                                //     Ok(_) => {}
-                                //     Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                                //     Err(wgpu::SurfaceError::OutOfMemory) => {
-                                //         *control_flow = ControlFlow::Exit
-                                //     }
-                                //     Err(e) => eprintln!("{:?}", e),
-                                // }
+                                                                // wgpu.render();
+                                match runtime.spawn(|| async { wgpu.render() }){
+                                    Ok(_) => {}
+                                    Err(wgpu::SurfaceError::Lost) => wgpu.resize(wgpu.size),
+                                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                                        *control_flow = ControlFlow::Exit
+                                    }
+                                    Err(e) => eprintln!("{:?}", e),
+                                }
                             }
                             _ => {}
                         }
@@ -207,8 +205,8 @@ mod core {
                 // <GenericRenderer as Renderer>::init(self.renderer);
                 GenericRenderer::init(self).await;
             }
-            async fn render(&mut self) {
-                GenericRenderer::render(self).await;
+            async fn render(&mut self)-> Result<(), wgpu::SurfaceError> {
+                GenericRenderer::render(self).await
             }
             async fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
                 if new_size.width > 0 && new_size.height > 0 {
