@@ -19,7 +19,7 @@ mod core {
             // Self and GenericRenderer should be interchangable
             async fn new() -> Self;
             async fn init(wgpu: &mut WGPUInterface<GenericRenderer>);
-            async fn render(wgpu: &mut WGPUInterface<GenericRenderer>);
+            async fn render(wgpu: &mut WGPUInterface<GenericRenderer>)-> Result<(), wgpu::SurfaceError>;
             async fn resize(wgpu: &mut WGPUInterface<GenericRenderer>);
         }
         struct WGPUInterface<GenericRenderer>
@@ -99,7 +99,7 @@ mod core {
                     mut window,
                     mut instance,
                 } = self;
-                runtime.block_on(async move {
+                runtime.block_on( move {
                     event_loop.run(move |event, __, control_flow| {
                         match event {
                             Event::WindowEvent {
@@ -128,9 +128,9 @@ mod core {
                             }
                             Event::RedrawRequested(window_id) if window_id == window.id() => {
                                                                 // wgpu.render();
-                                match runtime.spawn(|| async { wgpu.render() }){
+                                match runtime.spawn(|| async { wgpu.render() }()).await{
                                     Ok(_) => {}
-                                    Err(wgpu::SurfaceError::Lost) => wgpu.resize(wgpu.size),
+                                    Err(wgpu::SurfaceError::Lost) => wgpu.resize(wgpu.size).await,
                                     Err(wgpu::SurfaceError::OutOfMemory) => {
                                         *control_flow = ControlFlow::Exit
                                     }
@@ -160,7 +160,7 @@ mod core {
                         power_preference: wgpu::PowerPreference::default(),
                         compatible_surface: Some(&surface),
                         force_fallback_adapter: false,
-                    }).await;
+                    }).await.unwrap();
                                                              
                 let (device,queue) = adapter.request_device(        
                     &wgpu::DeviceDescriptor {
@@ -173,7 +173,7 @@ mod core {
                         label: None,
                     },
                     None,
-                ).await;
+                ).await.unwrap();
                 let config = wgpu::SurfaceConfiguration {
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                     format: surface.get_capabilities(&adapter).formats[0],
