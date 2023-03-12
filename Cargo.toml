@@ -16,6 +16,7 @@ harness = false
 
 [dependencies]
 async-trait = "0.1.64"
+bitvec = "1.0.1"
 bytemuck = {version="1.13.0",features=["derive"]}
 cfg-if = "1"
 env_logger = "0.10.0"
