@@ -16,10 +16,10 @@ mod core {
             window::{Window, WindowBuilder},
         };
 
-        pub trait Renderer: Send{
+        pub trait Renderer: Send + 'static{
             fn new(window: Window) -> impl Future<Output = Self> + Send ;
             // async fn new(window: Window) -> Self;
-            fn render(&mut self) -> impl Future<Output = Result<(), wgpu::SurfaceError>>+ Send + '_;
+            fn render(&mut self) -> impl Future<Output = Result<(), wgpu::SurfaceError>>+ Send ;
             fn resize(&mut self, new_size: Option<winit::dpi::PhysicalSize<u32>>);
             fn get_size(&self) -> winit::dpi::PhysicalSize<u32>;
             fn get_window(&self) -> &Window;
@@ -45,7 +45,7 @@ mod core {
       
         impl<GenericRenderer> RT<GenericRenderer>
         where
-            GenericRenderer: Renderer + 'static,
+            GenericRenderer: Renderer,
         {
             fn new() -> impl Future<Output = Self> {
                 // #[cfg(feature = "full")]
@@ -54,7 +54,6 @@ mod core {
                 // let runtime = tokio::runtime::Builder::new_current_thread()
                 //     .build()
                 //     .unwrap();
-
                 async{
                     cfg_if::cfg_if! {
                         if #[cfg(target_arch = "wasm32")]{
@@ -82,14 +81,14 @@ mod core {
                             })
                             .expect("Couldn't append canvas to document body.");
                     }
-                    let renderer = task::spawn(GenericRenderer::new(window));
+                    // let renderer = task::spawn(GenericRenderer::new(window));
                     
                     // let instance = Instance {};
                     // let renderer = renderer.await.unwrap();
-                    // let renderer = GenericRenderer::new(window.clone()).await;
-                    Self{renderer:renderer.await.unwrap(),event_loop}
+                    let renderer = GenericRenderer::new(window).await;
+                    Self{renderer,event_loop}
                 }
-                          }
+            }
             fn run(mut self) {
                 let RT {
                     // mut runtime,
@@ -100,14 +99,13 @@ mod core {
                 // runtime.block_on(async move {
                     // runtime.spawn_blocking(move || {
                 // task::spawn(async{
-                    let mut time = std::time::Instant::now();
-                    let mut dt = std::time::Duration::ZERO;
-                let test =                     
-move |event, _, control_flow| {
+                let mut time = std::time::Instant::now();
+                let mut dt = std::time::Duration::ZERO;
+                event_loop.run(move |event, _, control_flow| {
                         dt = std::time::Instant::now() - time;
                         time += dt;
                         println!("{:?}", dt);
-                        match event {
+                        match event{
                                 Event::WindowEvent {
                                     ref event,
                                     window_id,
@@ -154,73 +152,73 @@ move |event, _, control_flow| {
                             });
                                 }
                                 _ => {}
-                            };
-                
-                    event_loop.run(test);
+                            }
+                    // event_loop.run(test);
                     // });
-                // });
-            }
+                    })             // }
+                }
+            
         }
        
-        impl  WGPUInterface        {
-            // fn new(window: Window) -> impl Future<Output = Self> + Send + 'static {
-            //     async{
-            //     let size = window.inner_size();
+        impl  WGPUInterface{
+            fn new(window: Window) -> Self {
+                let size = window.inner_size();
+                let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                    backends: wgpu::Backends::all(),
+                    ..Default::default()
+                });
 
-            //     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            //         backends: wgpu::Backends::all(),
-            //         ..Default::default()
-            //     });
+                let surface = unsafe { instance.create_surface(&window) }.unwrap();
+                let adapter_task = task::spawn(async{
+                    let adapter = instance
+                    .request_adapter(&wgpu::RequestAdapterOptions {
+                        power_preference: wgpu::PowerPreference::default(),
+                        compatible_surface: Some(&surface),
+                        force_fallback_adapter: false,
+                    }).await.unwrap();
 
-            //     let surface = unsafe { instance.create_surface(&window) }.unwrap();
-            //     let adapter = instance
-            //         .request_adapter(&wgpu::RequestAdapterOptions {
-            //             power_preference: wgpu::PowerPreference::default(),
-            //             compatible_surface: Some(&surface),
-            //             force_fallback_adapter: false,
-            //         })
-            //         .await
-            //         .unwrap();
-
-            //     let (device, queue) = adapter
-            //         .request_device(
-            //             &wgpu::DeviceDescriptor {
-            //                 features: wgpu::Features::empty(),
-            //                 limits: if cfg!(target_arch = "wasm32") {
-            //                     wgpu::Limits::downlevel_webgl2_defaults()
-            //                 } else {
-            //                     wgpu::Limits::default()
-            //                 },
-            //                 label: None,
-            //             },
-            //             None,
-            //         )
-            //         .await
-            //         .unwrap();
-            //     let config = wgpu::SurfaceConfiguration {
-            //         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            //         format: surface.get_capabilities(&adapter).formats[0],
-            //         view_formats: surface.get_capabilities(&adapter).formats,
-            //         width: size.width,
-            //         height: size.height,
-            //         present_mode: wgpu::PresentMode::Fifo,
-            //         alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            //     };
-            //     surface.configure(&device, &config);
+                    let (device, queue) = adapter
+                    .request_device(
+                        &wgpu::DeviceDescriptor {
+                            features: wgpu::Features::empty(),
+                            limits: if cfg!(target_arch = "wasm32") {
+                                wgpu::Limits::downlevel_webgl2_defaults()
+                            } else {
+                                wgpu::Limits::default()
+                            },
+                            label: None,
+                        },
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                    (adapter,device,queue)
+                });
+            
+                let config = wgpu::SurfaceConfiguration {
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    format: surface.get_capabilities(&adapter).formats[0],
+                    view_formats: surface.get_capabilities(&adapter).formats,
+                    width: size.width,
+                    height: size.height,
+                    present_mode: wgpu::PresentMode::Fifo,
+                    alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                };
+                surface.configure(&device, &config);
                 
-            //     Self {
-            //         surface,
-            //         device,
-            //         queue,
-            //         config,
-            //         size,
-            //     }
-            // }}
-            // fn render(&mut self) -> impl Future<Output = Result<(), wgpu::SurfaceError>> {
-            //     async{
-            //         self.renderer.render().await
-            //     }
-            // }
+                Self {
+                    surface,
+                    device,
+                    queue,
+                    config,
+                    size,
+                }
+            }
+            fn render(&mut self) -> impl Future<Output = Result<(), wgpu::SurfaceError>> {
+                async{
+                    self.renderer.render().await
+                }
+            }
 
             fn resize(&mut self, new_size: Option<winit::dpi::PhysicalSize<u32>>) {
                 let real_size = new_size.unwrap_or(self.size);
