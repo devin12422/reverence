@@ -1234,7 +1234,7 @@ dependencies = [
  "iced_native",
  "iced_style",
  "log",
- "raw-window-handle 0.5.0",
+ "raw-window-handle 0.5.1",
  "thiserror",
 ]
 
@@ -1279,7 +1279,7 @@ dependencies = [
  "iced_graphics",
  "iced_native",
  "log",
- "raw-window-handle 0.5.0",
+ "raw-window-handle 0.5.1",
  "wgpu 0.14.2",
  "wgpu_glyph",
 ]
@@ -1578,7 +1578,7 @@ dependencies = [
  "jni-sys",
  "ndk-sys",
  "num_enum",
- "raw-window-handle 0.5.0",
+ "raw-window-handle 0.5.1",
  "thiserror",
 ]
 
@@ -2073,12 +2073,9 @@ dependencies = [
 
 [[package]]
 name = "raw-window-handle"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed7e3d950b66e19e0c372f3fa3fbbcf85b1746b571f74e0c2af6042a5c93420a"
-dependencies = [
- "cty",
-]
+checksum = "4f851a03551ceefd30132e447f07f96cb7011d6b658374f3aed847333adb5559"
 
 [[package]]
 name = "rayon"
@@ -2152,6 +2149,7 @@ dependencies = [
  "iced_winit",
  "log",
  "pollster",
+ "raw-window-handle 0.5.1",
  "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -2791,7 +2789,7 @@ dependencies = [
  "log",
  "naga 0.10.0",
  "parking_lot 0.12.1",
- "raw-window-handle 0.5.0",
+ "raw-window-handle 0.5.1",
  "smallvec",
  "static_assertions",
  "wasm-bindgen",
@@ -2815,7 +2813,7 @@ dependencies = [
  "naga 0.11.0",
  "parking_lot 0.12.1",
  "profiling",
- "raw-window-handle 0.5.0",
+ "raw-window-handle 0.5.1",
  "smallvec",
  "static_assertions",
  "wasm-bindgen",
@@ -2842,7 +2840,7 @@ dependencies = [
  "naga 0.10.0",
  "parking_lot 0.12.1",
  "profiling",
- "raw-window-handle 0.5.0",
+ "raw-window-handle 0.5.1",
  "smallvec",
  "thiserror",
  "web-sys",
@@ -2865,7 +2863,7 @@ dependencies = [
  "naga 0.11.0",
  "parking_lot 0.12.1",
  "profiling",
- "raw-window-handle 0.5.0",
+ "raw-window-handle 0.5.1",
  "smallvec",
  "thiserror",
  "web-sys",
@@ -2902,7 +2900,7 @@ dependencies = [
  "parking_lot 0.12.1",
  "profiling",
  "range-alloc",
- "raw-window-handle 0.5.0",
+ "raw-window-handle 0.5.1",
  "renderdoc-sys",
  "smallvec",
  "thiserror",
@@ -2944,7 +2942,7 @@ dependencies = [
  "parking_lot 0.12.1",
  "profiling",
  "range-alloc",
- "raw-window-handle 0.5.0",
+ "raw-window-handle 0.5.1",
  "renderdoc-sys",
  "smallvec",
  "thiserror",
@@ -3201,7 +3199,7 @@ dependencies = [
  "parking_lot 0.12.1",
  "percent-encoding",
  "raw-window-handle 0.4.3",
- "raw-window-handle 0.5.0",
+ "raw-window-handle 0.5.1",
  "sctk-adwaita",
  "smithay-client-toolkit",
  "wasm-bindgen",
