@@ -1,6 +1,7 @@
 #![feature(type_alias_impl_trait)]
 #![feature(return_position_impl_trait_in_trait)]
 #![feature(async_fn_in_trait)]
+#![feature(tuple_trait)]
 pub mod core {
     // use async_trait::async_trait;
     use std::future::Future;
@@ -11,38 +12,45 @@ pub mod core {
     use tokio::task;
     use wgpu::{util::DeviceExt, Surface};
     use winit::{
+        dpi::PhysicalSize,
         event::*,
         event_loop::{ControlFlow, EventLoop},
         window::{Window, WindowBuilder},
     };
-    pub trait HasCreateInfo {
-        type CreateInfo;
-        fn new<'info>(
-            create_info: &'info Self::CreateInfo,
-        ) -> impl Future<Output = Self> + Send + 'info;
+    // pub trait HasCreateInfoConstructor {
+    //     type CreateInfo;
+    //     fn new(create_info: &Self::CreateInfo) -> Self;
+    // }
+    // pub trait HasAsyncCreateInfoConstructor<'a>: Send + 'a {
+    //     type CreateInfo;
+
+    //     fn new<'info>(
+    //         create_info: &'info Self::CreateInfo,
+    //     ) -> impl Future<Output = Self> + Send + 'a + 'info
+    //     where
+    //         Self: Send + 'info;
+    // }
+    pub trait WindowAbstractor // where
+    //     Self: 'static,
+    {
+        fn get_size(&self) -> impl Into<[u32; 2]>;
     }
-    pub trait HasGenericCreateInfo<CreateInfo> {
-        fn new<'info>(create_info: &'info CreateInfo) -> impl Future<Output = Self> + Send + 'info;
-    }
-    pub trait WindowAbstractor {
-        fn get_size(&self) -> [u32; 2];
-        fn resize(&mut self, new_size: [u32; 2]);
-    }
-    pub trait RustWindowAbstractor: WindowAbstractor {
-        type Window: HasRawWindowHandle + HasRawDisplayHandle;
+    pub trait RustWindowAbstractor: WindowAbstractor + 'static {
+        type Window: HasRawWindowHandle + HasRawDisplayHandle + Send + Sync;
         fn get_window(&self) -> &Window;
     }
     pub trait GPUAbstractor
     where
-        Self: Send + 'static,
+        Self: Send,
     {
-        fn resize(&mut self, new_size: [u32; 2]);
+        fn resize(&mut self, new_size: impl Into<[u32; 2]>);
     }
     pub trait RendererAbstractor<WindowInterface, GPUInterface>
     where
         WindowInterface: WindowAbstractor,
         GPUInterface: GPUAbstractor,
     {
+        fn render(&mut self) -> impl Future + Send + 'static;
     }
     // pub trait Renderer<GPUInterface>
     // where
@@ -55,54 +63,29 @@ pub mod core {
     //     ) -> impl Future<Output = Result<(), wgpu::SurfaceError>> + Send + 'a;
     //     fn get_window(&self) -> &Window;
     // }
-    struct WGPUInterface {
-        surface: wgpu::Surface,
-        device: wgpu::Device,
-        queue: wgpu::Queue,
-        config: wgpu::SurfaceConfiguration,
-        size: winit::dpi::PhysicalSize<u32>,
-    }
-    struct WGPUInterfaceCreateInfo<'info, W>
+    pub struct WGPUInterface
     where
-        W: RustWindowAbstractor + Send,
+        Self: Send + 'static,
     {
-        instance_descriptor: wgpu::InstanceDescriptor,
-        device_descriptor: wgpu::DeviceDescriptor<'info>,
-        window: &'info W,
+        pub surface: wgpu::Surface,
+        pub device: wgpu::Device,
+        pub queue: wgpu::Queue,
+        pub config: wgpu::SurfaceConfiguration,
+        pub size: winit::dpi::PhysicalSize<u32>,
     }
-    impl<'info, W> WGPUInterfaceCreateInfo<'info, W>
-    where
-        W: RustWindowAbstractor + Send,
-    {
-        fn new(window: &'info W) -> Self {
-            Self {
-                instance_descriptor: wgpu::InstanceDescriptor {
-                    backends: wgpu::Backends::PRIMARY,
-                    ..Default::default()
-                },
-                device_descriptor: wgpu::DeviceDescriptor {
-                    features: wgpu::Features::empty(),
-                    limits: if cfg!(target_arch = "wasm32") {
-                        wgpu::Limits::downlevel_webgl2_defaults()
-                    } else {
-                        wgpu::Limits::default()
-                    },
-                    label: None,
-                },
-                window,
-            }
-        }
-    }
-    impl<W> HasGenericCreateInfo<WGPUInterfaceCreateInfo<'_, W>> for WGPUInterface
-    where
-        W: RustWindowAbstractor + Send + Sync,
-    {
-        fn new<'info>(
-            create_info: &'info WGPUInterfaceCreateInfo<W>,
-        ) -> impl Future<Output = Self> + Send + 'info {
-            async {
+    use std::sync::Arc;
+    impl WGPUInterface {
+        pub fn new<W>(
+            window: Arc<W>,
+            size: impl Into<[u32; 2]>,
+        ) -> impl Future<Output = Self> + Send + 'static
+        where
+            W: HasRawWindowHandle + HasRawDisplayHandle + Send + Sync + 'static,
+        {
+            let size = size.into();
+            async move {
                 let size = {
-                    let size = create_info.window.get_size();
+                    // let size = size.into();
                     winit::dpi::PhysicalSize {
                         width: size[0],
                         height: size[1],
@@ -113,8 +96,7 @@ pub mod core {
                     ..Default::default()
                 });
 
-                let surface =
-                    unsafe { instance.create_surface(&create_info.window.get_window()) }.unwrap();
+                let surface = unsafe { instance.create_surface(&*window) }.unwrap();
                 let adapter = instance
                     .request_adapter(&wgpu::RequestAdapterOptions {
                         power_preference: wgpu::PowerPreference::default(),
@@ -160,22 +142,19 @@ pub mod core {
             }
         }
     }
-    // impl GPUAbstractor for WGPUInterface {
-    // fn resize(&mut self, new_size: Option<winit::dpi::PhysicalSize<u32>>) {
-    //     let real_size = new_size.unwrap_or(self.size);
-    //     if real_size.width > 0 && real_size.height > 0 {
-    //         self.size = real_size;
-    //         self.config.width = real_size.width;
-    //         self.config.height = real_size.height;
-    //         self.surface.configure(&self.device, &self.config);
-    //         // self.renderer.resize(new_size);
-    //     }
-    // }
-    // fn get_size(&self) -> winit::dpi::PhysicalSize<u32> {
-    //     self.size.clone()
-    // }
-    // fn get_window(&self) -> &Window {
-    //     self.renderer.get_window()
-    // }
-    // }
+    impl GPUAbstractor for WGPUInterface {
+        fn resize(&mut self, new_size: impl Into<[u32; 2]>) {
+            let new_size = new_size.into();
+            if new_size[0] > 0 && new_size[1] > 0 {
+                self.size = PhysicalSize {
+                    width: new_size[0],
+                    height: new_size[1],
+                };
+                self.config.width = self.size.width;
+                self.config.height = self.size.height;
+                self.surface.configure(&self.device, &self.config);
+                // self.renderer.resize(new_size);
+            }
+        }
+    }
 }
