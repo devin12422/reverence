@@ -1,4 +1,8 @@
+#![feature(type_alias_impl_trait)]
+#![feature(return_position_impl_trait_in_trait)]
+#![feature(async_fn_in_trait)]
 extern crate reverence;
+use bytemuck::{Pod, Zeroable};
 use reverence::core::*;
 use std::future::Future;
 use std::sync::Arc;
@@ -11,24 +15,43 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
-
+#[derive(Debug)]
+enum RendererInput {
+    Render,
+    Resize([u32; 2]),
+}
+trait Systemic
+where
+    Self: Send + 'static,
+{
+    fn run(self) -> impl Future + Send + 'static;
+}
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
     color: [f32; 3],
 }
-struct WindowHandler where Self:'static {
+struct WindowHandler
+where
+    Self: 'static,
+{
     window: Arc<Window>,
     event_loop: EventLoop<()>,
 }
-struct Renderer where Self:Send +'static{
+use tokio::sync::Notify;
+struct Renderer
+where
+    Self: Systemic,
+{
     gpu: WGPUInterface,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     num_vertices: u32,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    rx: Receiver<RendererInput>,
+    notify: Arc<Notify>,
 }
 impl WindowAbstractor for WindowHandler {
     fn get_size(&self) -> winit::dpi::PhysicalSize<u32> {
@@ -54,68 +77,95 @@ impl Vertex {
         }
     }
 }
-fn render<'info>(
-    gpu: &'info WGPUInterface,
-    render_pipeline: &'info wgpu::RenderPipeline,
-    vertex_buffer: &'info wgpu::Buffer,
-    num_vertices: &'info u32,
-    index_buffer: &'info wgpu::Buffer,
-    num_indices: &'info u32,
-) -> impl Future<Output = ()> + 'info + Send {
-    async {
-        let output = gpu.surface.get_current_texture().unwrap();
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
-            render_pass.set_pipeline(render_pipeline);
-            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..*num_indices, 0, 0..1);
+use tokio::sync::watch;
+use tokio::sync::watch::*;
+impl Systemic for Renderer {
+    fn run(mut self) -> impl Future<Output = ()> + Send + 'static {
+        async move {
+            println!("starting renderer");
+            loop {
+                self.rx.changed().await.unwrap();
+                println!("recieved command");
+                match match *self.rx.borrow_and_update() {
+                    RendererInput::Render => {
+                        let output = self.gpu.surface.get_current_texture().unwrap();
+                        let view = output
+                            .texture
+                            .create_view(&wgpu::TextureViewDescriptor::default());
+                        let mut encoder = self.gpu.device.create_command_encoder(
+                            &wgpu::CommandEncoderDescriptor {
+                                label: Some("Render Encoder"),
+                            },
+                        );
+                        {
+                            let mut render_pass =
+                                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                    label: Some("Render Pass"),
+                                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                        view: &view,
+                                        resolve_target: None,
+                                        ops: wgpu::Operations {
+                                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                                r: 0.1,
+                                                g: 0.2,
+                                                b: 0.3,
+                                                a: 1.0,
+                                            }),
+                                            store: true,
+                                        },
+                                    })],
+                                    depth_stencil_attachment: None,
+                                });
+                            render_pass.set_pipeline(&self.render_pipeline);
+                            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                            render_pass.set_index_buffer(
+                                self.index_buffer.slice(..),
+                                wgpu::IndexFormat::Uint16,
+                            );
+                            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+                        }
+                        self.gpu.queue.submit(std::iter::once(encoder.finish()));
+                        output.present();
+                        Ok(())
+                    }
+                    RendererInput::Resize(size) => {
+                        self.gpu.resize(size);
+                        Ok(())
+                    }
+                } {
+                    Ok(_) => {}
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        self.gpu.resize(self.gpu.size)
+                    }
+                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                        println!("render broke");
+                        break;
+                    }
+                    Err(e) => eprintln!("{:?}", e),
+                }
+
+                self.notify.notify_one();
+                println!("done rendering");
+                task::yield_now().await;
+            }
+            println!("left rendering loop");
         }
-        gpu.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
-        //         match renderer.render().await {
-        //             Ok(_) => {}
-        //             Err(wgpu::SurfaceError::Lost) => {
-        //                 renderer.resize(None)
-        //             }
-        //             Err(wgpu::SurfaceError::OutOfMemory) => {
-        //                 // *control_flow = ControlFlow::Exit;:w
-        //             }
-        //             Err(e) => eprintln!("{:?}", e),
-        //         }
     }
 }
-
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 impl Renderer {
-    fn new<W>(window: Arc<W>,size:impl Into<[u32;2]>) -> impl Future<Output = Self> +Send + 'static where W: HasRawWindowHandle + HasRawDisplayHandle + Send + Sync +'static{
+    fn new<W>(
+        window: Arc<W>,
+        size: impl Into<[u32; 2]>,
+        rx: Receiver<RendererInput>,
+        notify: Arc<Notify>,
+    ) -> impl Future<Output = Self> + Send + 'static
+    where
+        W: HasRawWindowHandle + HasRawDisplayHandle + Send + Sync + 'static,
+    {
         let size = size.into();
         async move {
-            let gpu = WGPUInterface::new(window,size).await;
+            let gpu = WGPUInterface::new(window.clone(), size).await;
             // let renderer = task::spawn(GenericRenderer::new(window));
 
             let shader = gpu
@@ -194,7 +244,8 @@ impl Renderer {
                 index_buffer,
                 num_indices,
                 num_vertices,
-                // window: window_handler,
+                rx,
+                notify, // window: window_handler,
             }
         }
     }
@@ -225,11 +276,11 @@ const VERTICES: &[Vertex] = &[
 const INDICIES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 fn main() {
     #[cfg(feature = "full")]
-    let tokio_runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
+    let tokio_runtime = Arc::new(tokio::runtime::Builder::new_multi_thread().build().unwrap());
     #[cfg(not(feature = "full"))]
-    let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+    let tokio_runtime = Arc::new(tokio::runtime::Builder::new_current_thread()
         .build()
-        .unwrap();
+        .unwrap());
     let _guard = tokio_runtime.enter();
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")]{
@@ -258,29 +309,32 @@ fn main() {
             .expect("Couldn't append canvas to document body.");
     }
     let window_handler = WindowHandler {
-        window:Arc::new(window),
+        window: Arc::new(window),
         event_loop,
     };
     tokio_runtime.block_on(async move {
         // let window_handler = WindowHandler{window,event_loop};
         // let window_handler = window_handler;
-        let renderer_task = task::spawn(Renderer::new(window_handler.window.clone(),*(&window_handler.get_size())));
+        let (tx, mut rx) = watch::channel(RendererInput::Render);
+        let render_notify = Arc::new(Notify::new());
+        // window_handler.window.as_ref
+        let renderer_task = task::spawn(Renderer::new(
+            window_handler.window.clone(),
+            *(&window_handler.get_size()),
+            rx,
+            render_notify.clone(),
+        ));
         let mut time = std::time::Instant::now();
         let mut dt = std::time::Duration::ZERO;
-        let mut renderer = renderer_task.await.unwrap();
-        let Renderer {
-            mut gpu,
-            mut render_pipeline,
-            mut vertex_buffer,
-            mut index_buffer,
-            mut num_indices,
-            mut num_vertices,
-        } = renderer;
+        let renderer = renderer_task.await.unwrap();
+        tx.send(RendererInput::Render).unwrap();
+        task::spawn(renderer.run());
+        task::yield_now().await;
         let WindowHandler { window, event_loop } = window_handler;
         event_loop.run(move |event, _, control_flow| {
             dt = std::time::Instant::now() - time;
             time += dt;
-            println!("{:?}", dt);
+            // println!("{:?}", dt);
             match event{
                 Event::WindowEvent {
                     ref event,
@@ -289,7 +343,6 @@ fn main() {
                     // && !instance.input(event)
                     =>
                 {
-
                     match event {
                         WindowEvent::CloseRequested
                         | WindowEvent::KeyboardInput {
@@ -302,12 +355,16 @@ fn main() {
                             ..
                         } => *control_flow = ControlFlow::Exit,
                         WindowEvent::Resized(physical_size) => {
-                            gpu.resize(*physical_size);
+                            tx.send(RendererInput::Resize((*physical_size).into())).unwrap();
+                            pollster::block_on(task::yield_now());
+                            // gpu.resize(*physical_size);
                         }
                         WindowEvent::ScaleFactorChanged {
                             new_inner_size, ..
                         } => {
-                           gpu.resize(**new_inner_size);
+
+                            tx.send(RendererInput::Resize((**new_inner_size).into())).unwrap();
+                            pollster::block_on(task::yield_now());
                         }
                         _ => {}
                     }
@@ -315,15 +372,29 @@ fn main() {
                 Event::RedrawRequested(window_id)
                     if window_id == window.id() =>
                 {
-                    
+
+                    tx.send(RendererInput::Render).unwrap();
+
+                    pollster::block_on(task::yield_now());
+                    // pollster::block_on(render_notify.notified());
+                    println!("finished rendering");
+
+
                      // let render = task::spawn(render(&gpu,&render_pipeline,&vertex_buffer ,&num_vertices ,&index_buffer,&num_indices));
                     // pollster::block_on(render);
-                                },Event::MainEventsCleared =>{}
+                 },Event::MainEventsCleared =>{
+                    
+                    window.request_redraw();
+
+                    pollster::block_on(task::yield_now());
+                }
                                 _ => {}
                             }
+                    pollster::block_on(task::yield_now());
             // event_loop.run(test);
             // });
-        })    });
+        })
+    });
     // runtime.block_on(async move {
     // runtime.spawn_blocking(move || {
     // task::spawn(async{

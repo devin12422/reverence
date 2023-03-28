@@ -1,7 +1,6 @@
 #![feature(type_alias_impl_trait)]
 #![feature(return_position_impl_trait_in_trait)]
 #![feature(async_fn_in_trait)]
-#![feature(tuple_trait)]
 pub mod core {
     // use async_trait::async_trait;
     use std::future::Future;
@@ -84,6 +83,7 @@ pub mod core {
         {
             let size = size.into();
             async move {
+                println!("{:?}", size);
                 let size = {
                     // let size = size.into();
                     winit::dpi::PhysicalSize {
@@ -96,7 +96,7 @@ pub mod core {
                     ..Default::default()
                 });
 
-                let surface = unsafe { instance.create_surface(&*window) }.unwrap();
+                let surface = unsafe { instance.create_surface(window.as_ref()) }.unwrap();
                 let adapter = instance
                     .request_adapter(&wgpu::RequestAdapterOptions {
                         power_preference: wgpu::PowerPreference::default(),
@@ -131,7 +131,6 @@ pub mod core {
                     alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 };
                 surface.configure(&device, &config);
-
                 Self {
                     surface,
                     device,
@@ -145,6 +144,7 @@ pub mod core {
     impl GPUAbstractor for WGPUInterface {
         fn resize(&mut self, new_size: impl Into<[u32; 2]>) {
             let new_size = new_size.into();
+            println!("{:?}", new_size);
             if new_size[0] > 0 && new_size[1] > 0 {
                 self.size = PhysicalSize {
                     width: new_size[0],
