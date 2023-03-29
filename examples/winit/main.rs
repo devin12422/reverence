@@ -3,6 +3,7 @@
 #![feature(async_fn_in_trait)]
 extern crate reverence;
 use bytemuck::{Pod, Zeroable};
+use futures::future::BoxFuture;
 use reverence::core::*;
 use std::future::Future;
 use std::sync::Arc;
@@ -20,12 +21,14 @@ enum RendererInput {
     Render,
     Resize([u32; 2]),
 }
-trait Systemic
-where
-    Self: Send + 'static,
-{
-    fn run(self) -> impl Future + Send + 'static;
-}
+use std::pin::Pin;
+// trait Systemic
+// where
+//     Self: Send + 'static,
+// {
+//     type SystemicFuture:Future<Output = Pin<Box<Self::SystemicFuture>>> + Send + 'static;
+//     fn run(self) -> Pin<Box< Self::SystemicFuture>>;
+// }
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
@@ -41,8 +44,8 @@ where
 }
 use tokio::sync::Notify;
 struct Renderer
-where
-    Self: Systemic,
+// where
+// Self: Systemic,
 {
     gpu: WGPUInterface,
     render_pipeline: wgpu::RenderPipeline,
@@ -79,12 +82,14 @@ impl Vertex {
 }
 use tokio::sync::watch;
 use tokio::sync::watch::*;
-impl Systemic for Renderer {
+impl Renderer {
+    // type SystemicFuture = impl Future<Output = Pin<Box<Self::SystemicFuture>>> + Send + 'static;
+    // fn run(self) -> Self::SystemicFuture;
+    // type SystemicFuture = impl Future<Output = Self::SystemicFuture> + Send + 'static;
     fn run(mut self) -> impl Future<Output = ()> + Send + 'static {
         async move {
             println!("starting renderer");
-            loop {
-                self.rx.changed().await.unwrap();
+            if (self.rx.has_changed().unwrap()) {
                 println!("recieved command");
                 match match *self.rx.borrow_and_update() {
                     RendererInput::Render => {
@@ -139,16 +144,12 @@ impl Systemic for Renderer {
                     }
                     Err(wgpu::SurfaceError::OutOfMemory) => {
                         println!("render broke");
-                        break;
                     }
                     Err(e) => eprintln!("{:?}", e),
                 }
-
-                self.notify.notify_one();
-                println!("done rendering");
-                task::yield_now().await;
             }
-            println!("left rendering loop");
+            println!("done rendering");
+            // BoxFuture
         }
     }
 }
@@ -278,9 +279,11 @@ fn main() {
     #[cfg(feature = "full")]
     let tokio_runtime = Arc::new(tokio::runtime::Builder::new_multi_thread().build().unwrap());
     #[cfg(not(feature = "full"))]
-    let tokio_runtime = Arc::new(tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap());
+    let tokio_runtime = Arc::new(
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap(),
+    );
     let _guard = tokio_runtime.enter();
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")]{
@@ -312,89 +315,88 @@ fn main() {
         window: Arc::new(window),
         event_loop,
     };
-    tokio_runtime.block_on(async move {
-        // let window_handler = WindowHandler{window,event_loop};
-        // let window_handler = window_handler;
-        let (tx, mut rx) = watch::channel(RendererInput::Render);
-        let render_notify = Arc::new(Notify::new());
-        // window_handler.window.as_ref
-        let renderer_task = task::spawn(Renderer::new(
-            window_handler.window.clone(),
-            *(&window_handler.get_size()),
-            rx,
-            render_notify.clone(),
-        ));
-        let mut time = std::time::Instant::now();
-        let mut dt = std::time::Duration::ZERO;
-        let renderer = renderer_task.await.unwrap();
-        tx.send(RendererInput::Render).unwrap();
-        task::spawn(renderer.run());
-        task::yield_now().await;
-        let WindowHandler { window, event_loop } = window_handler;
-        event_loop.run(move |event, _, control_flow| {
-            dt = std::time::Instant::now() - time;
-            time += dt;
-            // println!("{:?}", dt);
-            match event{
-                Event::WindowEvent {
-                    ref event,
-                    window_id,
-                } if window_id == window.id()
-                    // && !instance.input(event)
-                    =>
-                {
-                    match event {
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            input:
-                                KeyboardInput {
-                                    state: ElementState::Pressed,
-                                    virtual_keycode: Some(VirtualKeyCode::Escape),
-                                    ..
-                                },
-                            ..
-                        } => *control_flow = ControlFlow::Exit,
-                        WindowEvent::Resized(physical_size) => {
-                            tx.send(RendererInput::Resize((*physical_size).into())).unwrap();
-                            pollster::block_on(task::yield_now());
-                            // gpu.resize(*physical_size);
-                        }
-                        WindowEvent::ScaleFactorChanged {
-                            new_inner_size, ..
-                        } => {
-
-                            tx.send(RendererInput::Resize((**new_inner_size).into())).unwrap();
-                            pollster::block_on(task::yield_now());
-                        }
-                        _ => {}
+    // tokio_runtime.block_on(async move {
+    // let window_handler = WindowHandler{window,event_loop};
+    // let window_handler = window_handler;
+    let (tx, mut rx) = watch::channel(RendererInput::Render);
+    let render_notify = Arc::new(Notify::new());
+    // window_handler.window.as_ref
+    let renderer_task = task::spawn(Renderer::new(
+        window_handler.window.clone(),
+        *(&window_handler.get_size()),
+        rx,
+        render_notify.clone(),
+    ));
+    let mut time = std::time::Instant::now();
+    let mut dt = std::time::Duration::ZERO;
+    let renderer = tokio_runtime.block_on(renderer_task).unwrap();
+    tx.send(RendererInput::Render).unwrap();
+    let WindowHandler { window, event_loop } = window_handler;
+    // let render_task = renderer.run();
+    // tokio::pin!(render_task);
+    event_loop.run(move |event, _, control_flow| {
+        dt = std::time::Instant::now() - time;
+        time += dt;
+        // println!("{:?}", dt);
+        match event{
+            Event::WindowEvent {
+                ref event,
+                window_id,
+            } if window_id == window.id()
+                // && !instance.input(event)
+                =>
+            {
+                match event {
+                    WindowEvent::CloseRequested
+                    | WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Escape),
+                                ..
+                            },
+                        ..
+                    } => *control_flow = ControlFlow::Exit,
+                    WindowEvent::Resized(physical_size) => {
+                        tx.send(RendererInput::Resize((*physical_size).into())).unwrap();
+                        // gpu.resize(*physical_size);
                     }
+                    WindowEvent::ScaleFactorChanged {
+                        new_inner_size, ..
+                    } => {
+                        tx.send(RendererInput::Resize((**new_inner_size).into())).unwrap();
+                    }
+                    _ => {}
                 }
-                Event::RedrawRequested(window_id)
-                    if window_id == window.id() =>
-                {
+            }
+            Event::RedrawRequested(window_id)
+                if window_id == window.id() =>
+            {
 
-                    tx.send(RendererInput::Render).unwrap();
+                tx.send(RendererInput::Render).unwrap();
+                let render_task = tokio_runtime.spawn(renderer.run());
+                // {
+                // let render_task = tokio_runtime.block_on(render_task);
+                // let render_task = tokio_runtime.spawn(renderer.run());
+                tokio_runtime.block_on(&mut render_task);
+                // let renderer = tokio_runtime.block_on(render_task);
+                // }
+                // pollster::block_on(render_notify.notified());
+                println!("finished rendering");
 
-                    pollster::block_on(task::yield_now());
-                    // pollster::block_on(render_notify.notified());
-                    println!("finished rendering");
 
+                 // let render = task::spawn(render(&gpu,&render_pipeline,&vertex_buffer ,&num_vertices ,&index_buffer,&num_indices));
+                // pollster::block_on(render);
+             },Event::MainEventsCleared =>{
+                window.request_redraw();
 
-                     // let render = task::spawn(render(&gpu,&render_pipeline,&vertex_buffer ,&num_vertices ,&index_buffer,&num_indices));
-                    // pollster::block_on(render);
-                 },Event::MainEventsCleared =>{
-                    
-                    window.request_redraw();
-
-                    pollster::block_on(task::yield_now());
-                }
-                                _ => {}
-                            }
-                    pollster::block_on(task::yield_now());
-            // event_loop.run(test);
-            // });
-        })
+            }
+            _ => {}
+        }
+        // event_loop.run(test);
+        // });
     });
+    // });
     // runtime.block_on(async move {
     // runtime.spawn_blocking(move || {
     // task::spawn(async{

@@ -2143,6 +2143,7 @@ dependencies = [
  "console_log",
  "criterion",
  "env_logger",
+ "futures",
  "glam 0.22.0",
  "iai",
  "iced",

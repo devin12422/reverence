@@ -19,6 +19,7 @@ async-trait = "0.1.64"
 bytemuck = {version="1.13.0",features=["derive"]}
 cfg-if = "1"
 env_logger = "0.10.0"
+futures = "0.3.27"
 #ggrs = "0.9.3"
 glam = "0.22.0"
 iced = {version = "0.7.0",optional = true}
