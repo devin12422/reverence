@@ -112,7 +112,8 @@ use tokio::sync::watch::*;
 // }
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 impl Renderer {
-    async fn render(mut self){
+    fn render(mut self) -> impl Future<Output = ()> + Send + 'static{
+        async move{
             println!("starting renderer");
             if (self.rx.has_changed().unwrap()) {
                 println!("recieved command");
@@ -175,7 +176,7 @@ impl Renderer {
             }
             println!("done rendering");
             // BoxFuture
-      ;
+            }
     }
     fn new<W>(
         window: Arc<W>,
@@ -298,12 +299,12 @@ const VERTICES: &[Vertex] = &[
 ];
 const INDICIES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 
-async fn render(
-    renderer: &'static mut Renderer,
-    mut system_function: impl for<'a> AsyncFnMut<&'a mut Renderer, Output = ()>,
-) {
-    system_function.call(renderer).await;
-}
+// async fn render(
+//     renderer: &'static mut Renderer,
+//     mut system_function: impl for<'a> AsyncFnMut<&'a mut Renderer, Output = ()>,
+// ) {
+//     system_function.call(renderer).await;
+// }
 fn main() {
     #[cfg(feature = "full")]
     let tokio_runtime = Arc::new(tokio::runtime::Builder::new_multi_thread().build().unwrap());
@@ -361,8 +362,8 @@ fn main() {
     let mut renderer = tokio_runtime.block_on(renderer_task).unwrap();
     tx.send(RendererInput::Render).unwrap();
     let WindowHandler { window, event_loop } = window_handler;
-    let render_task = renderer.render();
-    tokio::pin!(render_task);
+    let mut render_task = Box::pin(renderer.render());
+    // tokio::pin!(render_task);
     event_loop.run(move |event, _, control_flow| {
         dt = std::time::Instant::now() - time;
         time += dt;
@@ -409,7 +410,7 @@ fn main() {
                 // {
                 // let render_task = tokio_runtime.block_on(render_task);
                 // let render_task = tokio_runtime.spawn(renderer.run());
-                tokio_runtime.block_on(&mut render_task);
+                tokio_runtime.block_on((render_task.as_mut()));
                 // let renderer = tokio_runtime.block_on(render_task);
                 // }
                 // pollster::block_on(render_notify.notified());
