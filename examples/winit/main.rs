@@ -112,8 +112,8 @@ use tokio::sync::watch::*;
 // }
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 impl Renderer {
-    fn render(mut self) -> impl Future<Output = ()> + Send + 'static{
-        async move{
+    fn render(mut self) -> impl FnMut(){//impl Future<Output = ()> + Send + 'static{
+         move || {
             println!("starting renderer");
             if (self.rx.has_changed().unwrap()) {
                 println!("recieved command");
@@ -359,9 +359,10 @@ fn main() {
     ));
     let mut time = std::time::Instant::now();
     let mut dt = std::time::Duration::ZERO;
-    let mut renderer = tokio_runtime.block_on(renderer_task).unwrap();
-    tx.send(RendererInput::Render).unwrap();
+    // tx.send(RendererInput::Render).unwrap();
     let WindowHandler { window, event_loop } = window_handler;
+
+    let mut renderer = tokio_runtime.block_on(renderer_task).unwrap();
     let mut render_task = Box::pin(renderer.render());
     // tokio::pin!(render_task);
     event_loop.run(move |event, _, control_flow| {
@@ -403,18 +404,20 @@ fn main() {
                 if window_id == window.id() =>
             {
 
-                tx.send(RendererInput::Render).unwrap();
+                match tx.send(RendererInput::Render){
+                    Ok(_) => {}
+                    Err(error) =>{ print!("error")}
+                };
                 // let x = renderfn();
                 // let render_task = tokio_runtime.spawn((&mut render_task));
                 
                 // {
                 // let render_task = tokio_runtime.block_on(render_task);
                 // let render_task = tokio_runtime.spawn(renderer.run());
-                tokio_runtime.block_on((render_task.as_mut()));
+                tokio_runtime.block_on(async{render_task.as_mut()});
                 // let renderer = tokio_runtime.block_on(render_task);
                 // }
                 // pollster::block_on(render_notify.notified());
-                println!("finished rendering");
 
 
                  // let render = task::spawn(render(&gpu,&render_pipeline,&vertex_buffer ,&num_vertices ,&index_buffer,&num_indices));

@@ -124,7 +124,7 @@ pub mod core {
                 let config = wgpu::SurfaceConfiguration {
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                     format: surface.get_capabilities(&adapter).formats[0],
-                    view_formats: surface.get_capabilities(&adapter).formats,
+                    view_formats: vec![], //surface.get_capabilities(&adapter).formats,
                     width: size.width,
                     height: size.height,
                     present_mode: wgpu::PresentMode::Fifo,
