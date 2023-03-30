@@ -22,13 +22,35 @@ enum RendererInput {
     Resize([u32; 2]),
 }
 use std::pin::Pin;
+
+trait AsyncFnMut<T> {
+    type Fut: Future<Output = Self::Output>;
+    type Output;
+
+    fn call(&mut self, arg: T) -> Self::Fut;
+}
+
+impl<F, Fut, T> AsyncFnMut<T> for F
+where
+    F: FnMut(T) -> Fut,
+    Fut: Future,
+{
+    type Fut = Fut;
+    type Output = Fut::Output;
+
+    fn call(&mut self, arg: T) -> Fut {
+        (self)(arg)
+    }
+}
 // trait Systemic
-// where
-//     Self: Send + 'static,
-// {
-//     type SystemicFuture:Future<Output = Pin<Box<Self::SystemicFuture>>> + Send + 'static;
-//     fn run(self) -> Pin<Box< Self::SystemicFuture>>;
-// }
+//  where
+//      Self: Send + 'static,
+//  {
+// /
+//      type SystemicFuture:Future<Output = Pin<Box<Self::SystemicFuture>>> + Send + 'static;
+//      fn run() -> Pin<Box< Self::SystemicFuture>>;
+// impl for<'a> AsyncFnMut<&'a mut File, Output = std::io::Result<()>>,
+//  }
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
@@ -82,12 +104,15 @@ impl Vertex {
 }
 use tokio::sync::watch;
 use tokio::sync::watch::*;
-impl Renderer {
+// impl Renderer {
     // type SystemicFuture = impl Future<Output = Pin<Box<Self::SystemicFuture>>> + Send + 'static;
     // fn run(self) -> Self::SystemicFuture;
     // type SystemicFuture = impl Future<Output = Self::SystemicFuture> + Send + 'static;
-    fn run(mut self) -> impl Future<Output = ()> + Send + 'static {
-        async move {
+    // fn renderfn() -> 
+// }
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+impl Renderer {
+    async fn render(mut self){
             println!("starting renderer");
             if (self.rx.has_changed().unwrap()) {
                 println!("recieved command");
@@ -150,11 +175,8 @@ impl Renderer {
             }
             println!("done rendering");
             // BoxFuture
-        }
+      ;
     }
-}
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-impl Renderer {
     fn new<W>(
         window: Arc<W>,
         size: impl Into<[u32; 2]>,
@@ -275,6 +297,13 @@ const VERTICES: &[Vertex] = &[
     },
 ];
 const INDICIES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
+
+async fn render(
+    renderer: &'static mut Renderer,
+    mut system_function: impl for<'a> AsyncFnMut<&'a mut Renderer, Output = ()>,
+) {
+    system_function.call(renderer).await;
+}
 fn main() {
     #[cfg(feature = "full")]
     let tokio_runtime = Arc::new(tokio::runtime::Builder::new_multi_thread().build().unwrap());
@@ -329,11 +358,11 @@ fn main() {
     ));
     let mut time = std::time::Instant::now();
     let mut dt = std::time::Duration::ZERO;
-    let renderer = tokio_runtime.block_on(renderer_task).unwrap();
+    let mut renderer = tokio_runtime.block_on(renderer_task).unwrap();
     tx.send(RendererInput::Render).unwrap();
     let WindowHandler { window, event_loop } = window_handler;
-    // let render_task = renderer.run();
-    // tokio::pin!(render_task);
+    let render_task = renderer.render();
+    tokio::pin!(render_task);
     event_loop.run(move |event, _, control_flow| {
         dt = std::time::Instant::now() - time;
         time += dt;
@@ -374,7 +403,9 @@ fn main() {
             {
 
                 tx.send(RendererInput::Render).unwrap();
-                let render_task = tokio_runtime.spawn(renderer.run());
+                // let x = renderfn();
+                // let render_task = tokio_runtime.spawn((&mut render_task));
+                
                 // {
                 // let render_task = tokio_runtime.block_on(render_task);
                 // let render_task = tokio_runtime.spawn(renderer.run());
