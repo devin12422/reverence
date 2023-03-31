@@ -259,6 +259,8 @@ const INDICIES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 // ) {
 //     system_function.call(renderer).await;
 // }
+use wasm_bindgen::prelude;
+#[wasm_bindgen]
 fn main() {
     #[cfg(feature = "full")]
     let tokio_runtime = Arc::new(tokio::runtime::Builder::new_multi_thread().build().unwrap());
