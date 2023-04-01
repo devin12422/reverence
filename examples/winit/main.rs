@@ -259,8 +259,8 @@ const INDICIES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 // ) {
 //     system_function.call(renderer).await;
 // }
-use wasm_bindgen::prelude;
-#[wasm_bindgen]
+// use wasm_bindgen::prelude;
+// #[wasm_bindgen]
 fn main() {
     #[cfg(feature = "full")]
     let tokio_runtime = Arc::new(tokio::runtime::Builder::new_multi_thread().build().unwrap());
@@ -316,14 +316,14 @@ fn main() {
     let WindowHandler { window, event_loop } = window_handler;
     let notify = Arc::new(Notify::new());
     let notify2 = notify.clone();
+    // println!("{:?}",renderer.gpu.adapter.features());
     tokio_runtime.block_on(async{
         tokio_runtime.spawn(async move{
             loop{
                 if rx.has_changed().unwrap(){
-                    println!("has changed");
                     match *rx.borrow_and_update(){
                         RendererInput::Render =>{
-                            renderer.render();
+                            // renderer.render();
                         },
                         RendererInput::Resize(size)=>{
                             renderer.gpu.resize(size);
@@ -345,7 +345,6 @@ fn main() {
         dt = std::time::Instant::now() - time;
         time += dt;
         last_frame += dt;
-        println!("{:?}", last_frame);
         match event{
             Event::WindowEvent {
                 ref event,

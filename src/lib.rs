@@ -105,7 +105,7 @@ pub mod core {
                     })
                     .await
                     .unwrap();
-
+                println!("{:?}", adapter.features());
                 let (device, queue) = adapter
                     .request_device(
                         &wgpu::DeviceDescriptor {
