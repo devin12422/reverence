@@ -1,6 +1,6 @@
 [package]
 name = "reverence"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 authors = ["Devin <kramerdevin321@gmail.com>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -30,7 +30,7 @@ pollster = "0.3.0" #To be removed in favor of tokio
 raw-window-handle = "0.5.1"
 # rayon = "1.6.1"
 tokio = { version = "1", features = ["sync","macros","io-util","rt","time"] }
-wasm-bindgen = "0.2.84"
+# wasm-bindgen = "0.2.84"
 wgpu = "0.15.0"
 winit = "0.27.5"
 

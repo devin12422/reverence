@@ -62,7 +62,6 @@ impl RustWindowAbstractor for WindowHandler {
 
 impl Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0=>Float32x3,1=>Float32x3];
-
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         use std::mem;
         wgpu::VertexBufferLayout {
@@ -134,9 +133,7 @@ impl Renderer {
                     Err(e) => eprintln!("{:?}", e),
                 };
             }
-            // BoxFuture
-            
-fn new<W>(
+    fn new<W>(
         window: Arc<W>,
         size: impl Into<[u32; 2]>,
     ) -> impl Future<Output = Self> + Send + 'static
@@ -147,7 +144,6 @@ fn new<W>(
         async move {
             let gpu = WGPUInterface::new(window.clone(), size).await;
             // let renderer = task::spawn(GenericRenderer::new(window));
-
             let shader = gpu
                 .device
                 .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -155,7 +151,6 @@ fn new<W>(
                     source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
                 }); // let instance = Instance {};
                     // let renderer = renderer.await.unwrap();
-
             let render_pipeline_layout =
                 gpu.device
                     .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -163,7 +158,6 @@ fn new<W>(
                         bind_group_layouts: &[],
                         push_constant_ranges: &[],
                     });
-
             let render_pipeline =
                 gpu.device
                     .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -261,6 +255,8 @@ const INDICIES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 // }
 // use wasm_bindgen::prelude;
 // #[wasm_bindgen]
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 fn main() {
     #[cfg(feature = "full")]
     let tokio_runtime = Arc::new(tokio::runtime::Builder::new_multi_thread().build().unwrap());
@@ -323,7 +319,7 @@ fn main() {
                 if rx.has_changed().unwrap(){
                     match *rx.borrow_and_update(){
                         RendererInput::Render =>{
-                            // renderer.render();
+                            renderer.render();
                         },
                         RendererInput::Resize(size)=>{
                             renderer.gpu.resize(size);
@@ -387,15 +383,12 @@ fn main() {
                 last_frame = std::time::Duration::ZERO;
                         // let x = renderfn();
                 // let render_task = tokio_runtime.spawn((&mut render_task));
-                
                 // {
                 // let render_task = tokio_runtime.block_on(render_task);
                 // let render_task = tokio_runtime.spawn(renderer.run());
                 // let renderer = tokio_runtime.block_on(render_task);
                 // }
                 // pollster::block_on(render_notify.notified());
-
-
                  // let render = task::spawn(render(&gpu,&render_pipeline,&vertex_buffer ,&num_vertices ,&index_buffer,&num_indices));
                 // pollster::block_on(render);
              },Event::MainEventsCleared =>{
