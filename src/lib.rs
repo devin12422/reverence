@@ -82,7 +82,6 @@ impl WGPUInterface {
     {
         let size = size.into();
         let size = {
-            // let size = size.into();
             winit::dpi::PhysicalSize {
                 width: size[0],
                 height: size[1],
