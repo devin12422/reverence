@@ -81,21 +81,20 @@ impl WGPUInterface {
         W: HasRawWindowHandle + HasRawDisplayHandle + 'static,
     {
         let size = size.into();
-        async move {
-            println!("{:?}", size);
-            let size = {
-                // let size = size.into();
-                winit::dpi::PhysicalSize {
-                    width: size[0],
-                    height: size[1],
-                }
-            };
-            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-                backends: wgpu::Backends::all(),
-                ..Default::default()
-            });
+        let size = {
+            // let size = size.into();
+            winit::dpi::PhysicalSize {
+                width: size[0],
+                height: size[1],
+            }
+        };
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            ..Default::default()
+        });
 
-            let surface = unsafe { instance.create_surface(window.as_ref()) }.unwrap();
+        let surface = unsafe { instance.create_surface(window.as_ref()) }.unwrap();
+        async move {
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::default(),
