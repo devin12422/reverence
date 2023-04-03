@@ -34,7 +34,7 @@ pub trait WindowAbstractor // where
     fn get_size(&self) -> impl Into<[u32; 2]>;
 }
 pub trait RustWindowAbstractor: WindowAbstractor + 'static {
-    type Window: HasRawWindowHandle + HasRawDisplayHandle + Send + Sync;
+    type Window: HasRawWindowHandle + HasRawDisplayHandle;
     fn get_window(&self) -> &Window;
 }
 pub trait GPUAbstractor
@@ -78,7 +78,7 @@ impl WGPUInterface {
         size: impl Into<[u32; 2]>,
     ) -> impl Future<Output = Self> + Send + 'static
     where
-        W: HasRawWindowHandle + HasRawDisplayHandle + Send + Sync + 'static,
+        W: HasRawWindowHandle + HasRawDisplayHandle + 'static,
     {
         let size = size.into();
         async move {

@@ -4,7 +4,7 @@
 extern crate reverence;
 use bytemuck::{Pod, Zeroable};
 use futures::future::BoxFuture;
-use reverence::core::*;
+use reverence::*;
 use std::future::Future;
 use std::sync::Arc;
 use tokio::runtime;
