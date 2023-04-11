@@ -65,8 +65,8 @@ use std::pin::Pin;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
-    position: [f32; 3],
-    color: [f32; 3],
+    _pos: [f32; 4],
+    _tex_coord: [f32; 2],
 }
 struct WindowHandler
 where
@@ -83,6 +83,7 @@ struct Renderer {
     num_vertices: u32,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    life: Life,
 }
 impl WindowAbstractor for WindowHandler {
     fn get_size(&self) -> winit::dpi::PhysicalSize<u32> {
@@ -96,7 +97,7 @@ impl WindowHandler {
 }
 
 impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0=>Float32x3,1=>Float32x3];
+    const ATTRIBS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0=>Float32x4,1=>Float32x2];
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         use std::mem;
         wgpu::VertexBufferLayout {
@@ -122,7 +123,7 @@ impl Renderer {
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some("Render Encoder"),
                     });
-        self.life.step(&mut command_encoder);
+            self.life.step(&mut encoder);
             {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Render Pass"),
@@ -142,6 +143,8 @@ impl Renderer {
                     depth_stencil_attachment: None,
                 });
                 render_pass.set_pipeline(&self.render_pipeline);
+
+                render_pass.set_bind_group(0, &self.bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 render_pass
                     .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -161,9 +164,30 @@ impl Renderer {
             Err(e) => eprintln!("{:?}", e),
         };
     }
+    fn vertex(pos: [i8; 2], tc: [i8; 2]) -> Vertex {
+        Vertex {
+            _pos: [pos[0] as f32, pos[1] as f32, 1.0, 1.0],
+            _tex_coord: [tc[0] as f32, tc[1] as f32],
+        }
+    }
+
+    fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
+        let vertex_data = [
+            Renderer::vertex([-1, -1], [0, 0]),
+            Renderer::vertex([1, -1], [1, 0]),
+            Renderer::vertex([1, 1], [1, 1]),
+            Renderer::vertex([-1, 1], [0, 1]),
+        ];
+
+        let index_data: &[u16] = &[0, 1, 2, 2, 3, 0];
+
+        (vertex_data.to_vec(), index_data.to_vec())
+    }
     fn new<W>(
         window: Arc<W>,
         size: impl Into<[u32; 2]>,
+        params: &'static LifeParams,
+        texture: &'static Texture,
     ) -> impl Future<Output = Self> + Send + 'static
     where
         W: HasRawWindowHandle + HasRawDisplayHandle + 'static,
@@ -172,19 +196,50 @@ impl Renderer {
         let gpu = WGPUInterface::new(window, size);
         async move {
             let gpu = gpu.await;
-            // let renderer = task::spawn(GenericRenderer::new(window));
             let shader = gpu
                 .device
                 .create_shader_module(wgpu::ShaderModuleDescriptor {
                     label: Some("Shader"),
                     source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-                }); // let instance = Instance {};
-                    // let renderer = renderer.await.unwrap();
+                });
+            let bind_group_layout =
+                gpu.device
+                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: None,
+                        entries: &[
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 0,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: texture.binding_type(wgpu::StorageTextureAccess::ReadOnly),
+                                count: None,
+                            },
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 1,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: params.binding_type(),
+                                count: None,
+                            },
+                        ],
+                    });
+            let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: texture.binding_resource(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: params.binding_resource(),
+                    },
+                ],
+                label: None,
+            });
             let render_pipeline_layout =
                 gpu.device
                     .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                         label: Some("Render Pipeline Layout"),
-                        bind_group_layouts: &[],
+                        bind_group_layouts: &[&bind_group_layout],
                         push_constant_ranges: &[],
                     });
             let render_pipeline =
@@ -223,23 +278,41 @@ impl Renderer {
                         },
                         multiview: None,
                     });
+            let (vertex_data, index_data) = Renderer::create_vertices();
             let vertex_buffer = gpu
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Vertex Buffer"),
-                    contents: bytemuck::cast_slice(VERTICES),
+                    contents: bytemuck::cast_slice(&vertex_data),
                     usage: wgpu::BufferUsages::VERTEX,
                 });
             let index_buffer = gpu
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Index Buffer"),
-                    contents: bytemuck::cast_slice(INDICIES),
+                    contents: bytemuck::cast_slice(&index_data),
                     usage: wgpu::BufferUsages::INDEX,
                 });
 
-            let num_vertices = VERTICES.len() as u32;
-            let num_indices = INDICIES.len() as u32;
+            let num_vertices = vertex_data.len() as u32;
+            let num_indices = index_data.len() as u32;
+
+            let ncells = size[0] * size[1];
+            let params = LifeParams::new(&gpu.device, size, 0.70);
+
+            let texture = Texture::new(&gpu.device, size, wgpu::TextureFormat::R32Float);
+            let mut life = Life::new(&gpu.device, size, &params, &texture);
+
+            // Set the initial state for all cells in the life grid.
+            life.import(&gpu.device, &gpu.queue, {
+                let mut cell_data: Vec<f32> = Vec::new();
+                let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+                let unif = Uniform::new_inclusive(0.0, 1.0);
+                for _ in 0..ncells {
+                    cell_data.push(unif.sample(&mut rng));
+                }
+                cell_data
+            });
             Self {
                 gpu,
                 render_pipeline,
@@ -247,34 +320,11 @@ impl Renderer {
                 index_buffer,
                 num_indices,
                 num_vertices,
+                life,
             }
         }
     }
 }
-
-const VERTICES: &[Vertex] = &[
-    Vertex {
-        position: [-0.0868241, 0.49240386, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-    Vertex {
-        position: [-0.49513406, 0.06958647, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-    Vertex {
-        position: [-0.21918549, -0.44939706, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-    Vertex {
-        position: [0.35966998, -0.3473291, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-    Vertex {
-        position: [0.44147372, 0.2347359, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-];
-const INDICIES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 use instant::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -325,33 +375,6 @@ fn main() {
         *(&window_handler.get_size()),
     ));
     let size = window_handler.get_size();
-    let size_into: [u32; 2] = size.into();
-    let ncells = size_into[0] * size_into[1];
-    let params = LifeParams::new(&renderer.gpu.device, window_handler.get_size(), 0.70);
-
-    let texture = Texture::new(
-        &renderer.gpu.device,
-        window_handler.get_size(),
-        wgpu::TextureFormat::R32Float,
-    );
-
-    let mut life = Life::new(
-        &renderer.gpu.device,
-        window_handler.get_size(),
-        &params,
-        &texture,
-    );
-
-    // Set the initial state for all cells in the life grid.
-    life.import(&renderer.gpu.device, &renderer.gpu.queue, {
-        let mut cell_data: Vec<f32> = Vec::new();
-        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let unif = Uniform::new_inclusive(0.0, 1.0);
-        for _ in 0..ncells {
-            cell_data.push(unif.sample(&mut rng));
-        }
-        cell_data
-    });
 
     // Step the algorithm a few times, so the initial image looks Life-like.
     let mut command_encoder = renderer
@@ -359,7 +382,7 @@ fn main() {
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     for _ in 0..100 {
-        life.step(&mut command_encoder);
+        renderer.life.step(&mut command_encoder);
     }
     renderer.gpu.queue.submit(Some(command_encoder.finish()));
     let mut time = Instant::now();
@@ -441,55 +464,5 @@ fn main() {
         }
            _ => {}
        }
-    });
-}
-    
-    /// render is called to generate each new frame
-    fn render(
-        &mut self,
-        view: &wgpu::TextureView,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        _spawner: &framework::Spawner,
-    ) {
-        let debug = false;
-
-      
-        if debug {
-            self.debug_buffer
-                .enqueue_copyin(&mut command_encoder, &self.life.src_buf());
-        }
-
-        // Run the life algorithm one step.
-
-        // Render the life cells into actual pixels, and display them.
-        self.renderer.render(&mut command_encoder, &view);
-
-        queue.submit(Some(command_encoder.finish()));
-
-        if debug {
-            println!("Life data at step {}:", self.life.frame_num());
-            self.debug_buffer.display(device);
-            println!("");
-        }
-    }
-}
-
-/// run example
-fn main() {
-    framework::run::<LifeProg>("life");
-}
-
-#[test]
-fn life() {
-    framework::test::<LifeProg>(framework::FrameworkRefTest {
-        image_path: "/examples/life/screenshot.png",
-        width: 1024,
-        height: 768,
-        optional_features: wgpu::Features::default(),
-        base_test_parameters: framework::test_common::TestParameters::default()
-            .downlevel_flags(wgpu::DownlevelFlags::COMPUTE_SHADERS),
-        tolerance: 0,
-        max_outliers: 0,
     });
 }

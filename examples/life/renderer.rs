@@ -40,14 +40,9 @@ impl Renderer {
         (vertex_data.to_vec(), index_data.to_vec())
     }
 
-    pub fn new(
-        sc_desc: &wgpu::SwapChainDescriptor,
-        device: &wgpu::Device,
-        params: &LifeParams,
-        texture: &Texture,
-    ) -> Self {
+    pub fn new(device: &wgpu::Device, params: &LifeParams, texture: &Texture) -> Self {
         // Load and compile the shaders.
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("render.wgsl"))),
         });
@@ -123,6 +118,7 @@ impl Renderer {
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
+            multiview: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -155,14 +151,14 @@ impl Renderer {
     pub fn render(&mut self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
-            color_attachments: &[wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                     store: true,
                 },
-            }],
+            })],
             depth_stencil_attachment: None,
         });
         rpass.push_debug_group("Prepare data for draw.");

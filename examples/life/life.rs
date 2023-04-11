@@ -34,14 +34,14 @@ impl Life {
     ) -> Self {
         let dim = dimensions.into();
         // Load and compile the compute shader.
-        let compute_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("life.wgsl"))),
         });
 
         // Allocate a pair of equal-sized GPU buffers to hold cell data.
         // COPY_SRC is used so they can be read from for debugging.
-        let cell_bufsize = dim[0] * dim[1] * mem::size_of::<f32>();
+        let cell_bufsize = dim[0] * dim[1] * (mem::size_of::<f32>() as u32);
         let cell_buffers = RenderSources::new(|dir| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(&format!("Source for {:?}", dir)),
@@ -150,19 +150,9 @@ impl Life {
         // empty
     }
 
-    /// resize is called on WindowEvent::Resized events
-    fn _resize(
-        &mut self,
-        _sc_desc: &wgpu::SwapChainDescriptor,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) {
-        // empty
-    }
-
     // Import some data into the Life grid.
     pub fn import(&self, device: &wgpu::Device, queue: &wgpu::Queue, cells: Vec<f32>) {
-        assert_eq!(cells.len(), self.dimensions[0] * self.dimensions[1]);
+        assert_eq!(cells.len() as u32, self.dimensions[0] * self.dimensions[1]);
 
         let import_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("cell data import buffer"),

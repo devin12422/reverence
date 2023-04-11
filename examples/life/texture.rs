@@ -21,7 +21,8 @@ impl Texture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::SAMPLED | wgpu::TextureUsages::STORAGE,
+            view_formats: &[],
+            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
         });
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
