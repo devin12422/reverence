@@ -30,9 +30,9 @@ impl Life {
         device: &wgpu::Device,
         dimensions: impl Into<[u32; 2]>,
         params: &LifeParams,
-        texture: &Texture,
     ) -> Self {
         let dim = dimensions.into();
+        println!("{:?}", dim);
         // Load and compile the compute shader.
         let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
@@ -41,7 +41,7 @@ impl Life {
 
         // Allocate a pair of equal-sized GPU buffers to hold cell data.
         // COPY_SRC is used so they can be read from for debugging.
-        let cell_bufsize = dim[0] * dim[1] * (mem::size_of::<f32>() as u32);
+        let cell_bufsize = dim[0] * dim[1] * (mem::size_of::<u32>() as u32);
         let cell_buffers = RenderSources::new(|dir| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(&format!("Source for {:?}", dir)),
@@ -87,13 +87,6 @@ impl Life {
                         },
                         count: None,
                     },
-                    // Binding for the global variable "texture".
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: texture.binding_type(wgpu::StorageTextureAccess::WriteOnly),
-                        count: None,
-                    },
                 ],
                 label: None,
             });
@@ -127,10 +120,6 @@ impl Life {
                         binding: 2,
                         resource: cell_buffers.dst(dir).as_entire_binding(),
                     },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: texture.binding_resource(),
-                    },
                 ],
                 label: None,
             })
@@ -145,13 +134,7 @@ impl Life {
         }
     }
 
-    /// update is called for any WindowEvent not handled by the framework
-    fn _update(&mut self, _event: winit::event::WindowEvent) {
-        // empty
-    }
-
-    // Import some data into the Life grid.
-    pub fn import(&self, device: &wgpu::Device, queue: &wgpu::Queue, cells: Vec<f32>) {
+    pub fn import(&self, device: &wgpu::Device, queue: &wgpu::Queue, cells: Vec<u32>) {
         assert_eq!(cells.len() as u32, self.dimensions[0] * self.dimensions[1]);
 
         let import_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -183,16 +166,16 @@ impl Life {
         let mut cpass = command_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("Life grid step"),
         });
-
-        let xdim = self.dimensions.width() + WORKGROUP_SIZE.0 - 1;
+        // println!("printing");
+        let xdim = self.dimensions[0] + WORKGROUP_SIZE.0 - 1;
         let xgroups = xdim / WORKGROUP_SIZE.0;
-        let ydim = self.dimensions.height() + WORKGROUP_SIZE.1 - 1;
+        let ydim = self.dimensions[1] + WORKGROUP_SIZE.1 - 1;
         let ygroups = ydim / WORKGROUP_SIZE.1;
         let dir = RenderDir::dir(self.frame_num);
 
         cpass.set_pipeline(&self.compute_pipeline);
         cpass.set_bind_group(0, &self.bind_groups.get(dir), &[]);
-        cpass.dispatch(xgroups, ygroups, 1);
+        cpass.dispatch_workgroups(xgroups, ygroups, 1);
 
         self.frame_num += 1;
     }
@@ -210,5 +193,11 @@ impl Life {
     #[allow(dead_code)]
     pub fn dst_buf(&self) -> &wgpu::Buffer {
         self.cell_buffers.dst(RenderDir::dir(self.frame_num))
+    }
+    // #[allow(dead_codec)]
+    // pub fn last_bound
+    #[allow(dead_code)]
+    pub fn n_cells(&self) -> u32 {
+        self.dimensions[0] * self.dimensions[1]
     }
 }
