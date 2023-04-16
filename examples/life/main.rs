@@ -188,14 +188,19 @@ impl Renderer {
                     label: None,
                     source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("render.wgsl"))),
                 });
-            let params = LifeParams::new(&gpu.device, [100, 100], 0.70);
+            let params = LifeParams::new(&gpu.device, [1000, 1000], 0.70);
 
-            let mut life = Life::new(&gpu.device, [100, 100], &params);
+            let mut life = Life::new(&gpu.device, [1000, 1000], &params);
 
             // Set the initial state for all cells in the life grid.
             life.import(&gpu.device, &gpu.queue, {
                 let mut cell_data: Vec<u32> = Vec::new();
-                let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+                let mut rng = rand::rngs::StdRng::seed_from_u64(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                );
                 let unif = Uniform::new_inclusive(0, 1);
                 for _ in 0..life.n_cells() {
                     cell_data.push(unif.sample(&mut rng) as u32);
