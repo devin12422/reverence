@@ -25,82 +25,44 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+const STRIDE: VertexBufferLayout = VertexBufferLayout {
+    array_stride: 2 * std::mem::size_of::<u32>() as wgpu::BufferAddress,
+    step_mode: VertexStepMode::Vertex,
+    attributes: &wgpu::vertex_attr_array![1=>Uint32x2],
+};
+const NELDER_MEAD_VERTICES: u32 = 3;
+const ARM_THICKNESS: u32 = 16;
 #[derive(Debug)]
 enum RendererInput {
     Render,
     Resize([u32; 2]),
     Exit,
 }
-trait Point {
-    fn get_position(&self) -> &[f32; 2];
-}
-trait GenericPoint<DataType>
-where
-    DataType: Into<[f32; 2]>,
-{
-    fn get_position(&self) -> &DataType;
-}
-struct DynamicIKPoint {
-    length: f32,
-    rotation: f32,
-    parent: dyn Point,
-}
-impl Point for DynamicIKPoint {
-    fn get_position(&self) -> &[f32; 2] {
-        &Vec2::from_angle(self.rotation)
-            .mul_add(
-                Vec2::splat(self.length),
-                Vec2::from_array(*self.parent.get_position()),
-            )
-            .into()
-    }
-}
-
-impl GenericPoint<Vec2> for DynamicIKPoint {
-    fn get_position(&self) -> &[f32; 2] {
-        &Vec2::from_angle(self.rotation)
-            .mul_add(
-                Vec2::splat(self.length),
-                Vec2::from_array(*self.parent.get_position()),
-            )
-            .into()
-    }
-}
-struct IKPoint {
-    length: f32,
-    rotation: f32,
-    parent: dyn GenericPoint<Vec2>,
-}
-impl GenericPoint<Vec2> for IKPoint {
-    fn get_position(&self) -> &Vec2 {
-        &Vec2::from_angle(self.rotation)
-            .mul_add(Vec2::splat(self.length), *self.parent.get_position())
-            .into()
-    }
-}
-struct DynamicAffineIKPoint {
-    transform: Affine2,
-    parent: dyn Point,
-}
-impl Point for DynamicAffineIKPoint {
-    fn get_position(&self) -> &[f32; 2] {
-        &self
-            .transform
-            .transform_point2(Vec2::from_array(*self.parent.get_position()))
-            .to_array()
-    }
-}
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     pos: [f32; 2],
 }
-impl Point for Vertex {
-    fn get_position(&self) -> &[f32; 2] {
-        &self.pos
+struct IKArm {
+    arm: Vec<f32>,
+    goal: Vec2,
+}
+impl IKArm {
+    fn new(start_position: [f32; 2], arm_lengths: Vec<f32>, goal: Option<Vec2>) -> Self {
+        let mut arm = vec![start_position[0], start_position[1]];
+        for length in arm_lengths {
+            arm.push(0.0);
+            arm.push(length);
+        }
+        Self {
+            arm,
+            goal: goal.unwrap_or(Vec2::ZERO),
+        }
+    }
+    fn get_end_position(&self) {
+        for 0..
     }
 }
-
 struct WindowHandler
 where
     Self: 'static,
@@ -126,12 +88,6 @@ impl WindowHandler {
         self.window.clone()
     }
 }
-const STRIDE: VertexBufferLayout = VertexBufferLayout {
-    array_stride: 2 * std::mem::size_of::<u32>() as wgpu::BufferAddress,
-    step_mode: VertexStepMode::Vertex,
-    attributes: &wgpu::vertex_attr_array![1=>Uint32x2],
-};
-const NELDER_MEAD_VERTICES: u32 = 3;
 impl Renderer {
     fn render(&mut self) {
         match {
