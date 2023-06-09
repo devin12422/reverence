@@ -1,77 +1,106 @@
-#![feature(type_alias_impl_trait)]
-#![feature(return_position_impl_trait_in_trait)]
-#![feature(async_fn_in_trait)]
 extern crate reverence;
 // mod core;
 // use crate::reverence::;
 use reverence::*;
 
+use bytemuck::{Pod, Zeroable};
+use glam::Affine2;
+use glam::Vec2;
 use rand::{
     distributions::{Distribution, Uniform},
     SeedableRng,
 };
-// use wgpu::SwapChainDescriptor;
-
-// mod debug_buffer;
-// mod dimensions;
-mod directions;
-mod life;
-mod life_params;
-mod texture;
-
-use crate::{life::Life, life_params::LifeParams, texture::Texture};
-use wgpu::*;
-// ---------------------------------------------------------------------------
-
-/// LifeProg struct holds all of the state used by the program.
-struct LifeProg {
-    life: Life,
-    renderer: Renderer,
-}
-
-// use reverence;
-// use reverence::core;
-// use reverence::WGPUInterface;
-// use core::WGPUInterface;
-use bytemuck::{Pod, Zeroable};
-use futures::future::BoxFuture;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::borrow::Cow;
-// use reverence::core::*;
 use std::future::Future;
 use std::sync::Arc;
-use tokio::runtime;
-use tokio::sync::oneshot;
+use tokio::sync::watch;
 use tokio::task;
+use wgpu::*;
 use wgpu::{util::DeviceExt, Surface};
 use winit::{
+    dpi::PhysicalPosition,
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
 
-use iced_wgpu::{ Backend, Renderer, Settings, Viewport};
-use iced_winit::{
-    conversion, futures, program, renderer, winit, Clipboard, Color, Debug,
-    Size,
-};
- trait System {
-    // type R
-    fn should_call() -> bool;
-    fn call();
-}
 #[derive(Debug)]
 enum RendererInput {
     Render,
     Resize([u32; 2]),
     Exit,
 }
-use std::pin::Pin;
+trait Point {
+    fn get_position(&self) -> &[f32; 2];
+}
+trait GenericPoint<DataType>
+where
+    DataType: Into<[f32; 2]>,
+{
+    fn get_position(&self) -> &DataType;
+}
+struct DynamicIKPoint {
+    length: f32,
+    rotation: f32,
+    parent: dyn Point,
+}
+impl Point for DynamicIKPoint {
+    fn get_position(&self) -> &[f32; 2] {
+        &Vec2::from_angle(self.rotation)
+            .mul_add(
+                Vec2::splat(self.length),
+                Vec2::from_array(*self.parent.get_position()),
+            )
+            .into()
+    }
+}
+
+impl GenericPoint<Vec2> for DynamicIKPoint {
+    fn get_position(&self) -> &[f32; 2] {
+        &Vec2::from_angle(self.rotation)
+            .mul_add(
+                Vec2::splat(self.length),
+                Vec2::from_array(*self.parent.get_position()),
+            )
+            .into()
+    }
+}
+struct IKPoint {
+    length: f32,
+    rotation: f32,
+    parent: dyn GenericPoint<Vec2>,
+}
+impl GenericPoint<Vec2> for IKPoint {
+    fn get_position(&self) -> &Vec2 {
+        &Vec2::from_angle(self.rotation)
+            .mul_add(Vec2::splat(self.length), *self.parent.get_position())
+            .into()
+    }
+}
+struct DynamicAffineIKPoint {
+    transform: Affine2,
+    parent: dyn Point,
+}
+impl Point for DynamicAffineIKPoint {
+    fn get_position(&self) -> &[f32; 2] {
+        &self
+            .transform
+            .transform_point2(Vec2::from_array(*self.parent.get_position()))
+            .to_array()
+    }
+}
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
-    _pos: [f32; 4],
-    _tex_coord: [f32; 2],
+    pos: [f32; 2],
 }
+impl Point for Vertex {
+    fn get_position(&self) -> &[f32; 2] {
+        &self.pos
+    }
+}
+
 struct WindowHandler
 where
     Self: 'static,
@@ -80,16 +109,12 @@ where
     event_loop: EventLoop<()>,
 }
 use tokio::sync::Notify;
-const SQUARE_POINTS: [u32; 8] = [0, 0, 0, 1, 1, 0, 1, 1];
 struct Renderer {
     gpu: reverence::WGPUInterface,
     render_pipeline: wgpu::RenderPipeline,
-    square_buffer: Buffer,
     // square_indices: Buffer,
-    life: Life,
     bind_group: BindGroup,
-    iced_renderer:iced_wgpu::Renderer,
-    staging_belt:wgpu::util::StagingBelt
+    staging_belt: wgpu::util::StagingBelt,
 }
 impl WindowAbstractor for WindowHandler {
     fn get_size(&self) -> winit::dpi::PhysicalSize<u32> {
@@ -101,20 +126,12 @@ impl WindowHandler {
         self.window.clone()
     }
 }
-const SQUARE_STRIDE: VertexBufferLayout = VertexBufferLayout {
+const STRIDE: VertexBufferLayout = VertexBufferLayout {
     array_stride: 2 * std::mem::size_of::<u32>() as wgpu::BufferAddress,
     step_mode: VertexStepMode::Vertex,
     attributes: &wgpu::vertex_attr_array![1=>Uint32x2],
 };
-
-const CELL_STRIDE: VertexBufferLayout = VertexBufferLayout {
-    array_stride: std::mem::size_of::<u32>() as wgpu::BufferAddress,
-    step_mode: VertexStepMode::Instance,
-    attributes: &wgpu::vertex_attr_array![0=>Uint32],
-};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use tokio::sync::watch;
-use tokio::sync::watch::*;
+const NELDER_MEAD_VERTICES: u32 = 3;
 impl Renderer {
     fn render(&mut self) {
         match {
@@ -127,65 +144,42 @@ impl Renderer {
             let view = output
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
-            {
-                let mut encoder =
-                    self.gpu
-                        .device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("Render Encoder"),
-                        });
-                {
-                    self.life.step(&mut encoder);
 
-                    let mut render_pass =
-                        &mut encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("Render Pass"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                                        r: 0.1,
-                                        g: 0.2,
-                                        b: 0.3,
-                                        a: 1.0,
-                                    }),
-                                    store: true,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                        });
-                    render_pass.set_pipeline(&self.render_pipeline);
+            let mut encoder =
+                self.gpu
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("Render Encoder"),
+                    });
 
-                    render_pass.set_bind_group(0, &self.bind_group, &[]);
-                    render_pass.set_vertex_buffer(0, self.life.src_buf().slice(..));
-
-                    render_pass.set_vertex_buffer(1, self.square_buffer.slice(..));
-                    render_pass.draw(0..4, 0..self.life.n_cells());
-                }
-
-renderer.with_primitives(|backend, primitive| {
-                            backend.present(
-                                &gpu.device,
-                                &mut self.staging_belt,
-                                &mut encoder,
-                                &view,
-                                primitive,
-                                &viewport,
-                                &debug.overlay(),
-                            );
-                        });                staging_belt.finish();
-                self.gpu.queue.submit(std::iter::once(encoder.finish()));
-            }
+            let mut render_pass = &mut encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 1.0,
+                        }),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+            render_pass.set_pipeline(&self.render_pipeline);
+            // render_pass.set_bind_group(0, &self.bind_group, &[]);
+            // render_pass.set_vertex_buffer(0, self.life.src_buf().slice(..));
+            // render_pass.set_vertex_buffer(1, self.square_buffer.slice(..));
+            // render_pass.draw(0..4, 0..self.life.n_cells());
+            self.staging_belt.finish();
+            self.gpu.queue.submit(std::iter::once(encoder.finish()));
             output.present();
-self.window_handler.window.set_cursor_icon(
-                             iced_winit::conversion::mouse_interaction(
-                                 state.mouse_interaction(),
-                             ),
-                         );
-
-                        // And recall staging buffers
-                        self.staging_belt.recall();            Ok(())
+            // And recall staging buffers
+            self.staging_belt.recall();
+            Ok(())
         } {
             Ok(_) => {}
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -214,25 +208,8 @@ self.window_handler.window.set_cursor_icon(
                     label: None,
                     source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("render.wgsl"))),
                 });
-            let params = LifeParams::new(&gpu.device, [1000, 1000], 0.70);
-
-            let mut life = Life::new(&gpu.device, [1000, 1000], &params);
 
             // Set the initial state for all cells in the life grid.
-            life.import(&gpu.device, &gpu.queue, {
-                let mut cell_data: Vec<u32> = Vec::new();
-                let mut rng = rand::rngs::StdRng::seed_from_u64(
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs(),
-                );
-                let unif = Uniform::new_inclusive(0, 1);
-                for _ in 0..life.n_cells() {
-                    cell_data.push(unif.sample(&mut rng) as u32);
-                }
-                cell_data
-            });
             let bind_group_layout =
                 gpu.device
                     .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -315,16 +292,12 @@ self.window_handler.window.set_cursor_icon(
             // let num_vertices = vertex_data.len() as u32;
             // let num_indices = index_data.len() as u32;
 
-let mut renderer =
-        winit_wgpu::Renderer::new(Backend::new(&device, Settings::default(), format));
-    let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
+            let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
             Self {
                 gpu,
                 render_pipeline,
-                life,
                 square_buffer,
                 bind_group,
-                iced_renderer,
                 staging_belt,
             }
         }
@@ -379,15 +352,6 @@ fn main() {
     let size = window_handler.get_size();
     let mut renderer = tokio_runtime.block_on(Renderer::new(window_handler.get_window(), *(&size)));
 
-    // Step the algorithm a few times, so the initial image looks Life-like.
-    // let mut command_encoder = renderer
-    //     .gpu
-    //     .device
-    //     .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    // for _ in 0..100 {
-    //     renderer.life.step(&mut command_encoder);
-    // }
-    // renderer.gpu.queue.submit(Some(command_encoder.finish()));
     let mut time = Instant::now();
     let mut dt = Duration::ZERO;
     let WindowHandler { window, event_loop } = window_handler;
@@ -450,7 +414,7 @@ fn main() {
                        tokio_runtime.block_on(notify2.notified());
                    },
                     WindowEvent::CursorMoved {position,..}=>{
-                        cursor_position = position;
+                        cursor_position = *position;
                     }
                    WindowEvent::ScaleFactorChanged {
                        new_inner_size, ..
@@ -461,14 +425,7 @@ fn main() {
                    _ => {}
                }
 
-                if let Some(event) = iced_winit::conversion::window_event(
-                    &event,
-                    window.scale_factor(),
-                    modifiers,
-                ) {
-                    state.queue_event(event);
-                }          
-           }
+                        }
            Event::RedrawRequested(window_id)
                if window_id == window.id() =>
            {
