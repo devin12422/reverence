@@ -1,13 +1,9 @@
-#![feature(type_alias_impl_trait)]
-#![feature(return_position_impl_trait_in_trait)]
-#![feature(async_fn_in_trait)]
 // use async_trait::async_trait;
 use std::future::Future;
 // use std::sync::{Arc, Mutex};
+use async_trait::async_trait;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use tokio::runtime;
-use tokio::sync::oneshot;
-use tokio::task;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use wgpu::{util::DeviceExt, Surface};
 use winit::{
     dpi::PhysicalSize,
@@ -15,23 +11,9 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
-// pub trait HasCreateInfoConstructor {
-//     type CreateInfo;
-//     fn new(create_info: &Self::CreateInfo) -> Self;
-// }
-// pub trait HasAsyncCreateInfoConstructor<'a>: Send + 'a {
-//     type CreateInfo;
-
-//     fn new<'info>(
-//         create_info: &'info Self::CreateInfo,
-//     ) -> impl Future<Output = Self> + Send + 'a + 'info
-//     where
-//         Self: Send + 'info;
-// }
 pub trait WindowAbstractor // where
-//     Self: 'static,
 {
-    fn get_size(&self) -> impl Into<[u32; 2]>;
+    fn get_size(&self) -> [u32; 2];
 }
 pub trait RustWindowAbstractor: WindowAbstractor + 'static {
     type Window: HasRawWindowHandle + HasRawDisplayHandle;
@@ -43,12 +25,16 @@ where
 {
     fn resize(&mut self, new_size: impl Into<[u32; 2]>);
 }
+#[async_trait]
 pub trait RendererAbstractor<WindowInterface, GPUInterface>
 where
     WindowInterface: WindowAbstractor,
     GPUInterface: GPUAbstractor,
 {
-    fn render(&mut self) -> impl Future + Send + 'static;
+    async fn render(&mut self);
+}
+pub trait SystemBackend {
+    fn get_time() -> SystemTime;
 }
 // pub trait Renderer<GPUInterface>
 // where

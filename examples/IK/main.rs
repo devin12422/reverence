@@ -44,6 +44,9 @@ struct Vertex {
     pos: [f32; 2],
 }
 struct IKArm {
+    // The first two floats in the vector are the position of the first point
+    // thereafter, each pair is the angle and length of that arm
+    // the number of joints in arm is equal two arm.len()/2 -1
     arm: Vec<f32>,
     goal: Vec2,
 }
@@ -59,8 +62,16 @@ impl IKArm {
             goal: goal.unwrap_or(Vec2::ZERO),
         }
     }
+    fn len_joints(&self) -> u32 {
+        return self.arm.len() / 2;
+    }
     fn get_end_position(&self) {
-        for 0..
+        let current_pos = Vec2::new(self.arm[0], self.arm[1]);
+        for i in 1..self.arm.len_joints() {
+            current_pos += Vec2::from_angle(self.arm[i * 2]) * self.arm[i * 2 + 1];
+            println!("current pos = {}", current_pos);
+            println!("{}", i)
+        }
     }
 }
 struct WindowHandler
@@ -79,8 +90,8 @@ struct Renderer {
     staging_belt: wgpu::util::StagingBelt,
 }
 impl WindowAbstractor for WindowHandler {
-    fn get_size(&self) -> winit::dpi::PhysicalSize<u32> {
-        self.window.inner_size()
+    fn get_size(&self) -> [u32; 2] {
+        self.window.inner_size().into()
     }
 }
 impl WindowHandler {

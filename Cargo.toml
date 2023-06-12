@@ -15,7 +15,7 @@ crate-type = ["cdylib","rlib"]
 # harness = false
 
 [dependencies]
-async-trait = "0.1.64"
+async-trait = "0.1.68"
 bytemuck = {version="1.13.0",features=["derive"]}
 cfg-if = "1"
 egui = "0.22.0"
@@ -30,8 +30,12 @@ log = "0.4.17"
 pollster = "0.3.0" #To be removed in favor of tokio
 rand = "0.8.5"
 raw-window-handle = "0.5.1"
+rayon = "1.7.0"
 # rayon = "1.6.1"
 tokio = { version = "1", features = ["sync","macros","io-util","rt","time"] }
+wasm-bindgen = "0.2.86"
+wasm-bindgen-futures = "0.4.36"
+web-sys = "0.3.63"
 wgpu = "0.15.0"
 winit = "0.27.5"
 
